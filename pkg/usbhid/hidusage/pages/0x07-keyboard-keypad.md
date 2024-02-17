@@ -1,3 +1,9 @@
+---
+name: Keyboard/Keypad Page
+code: 0x07
+---
+# Keys Table
+
 | Usage ID | Usage Name                       | Usage Type | AT-101 | PC-AT | Mac | Unix | Boot      |
 |----------|----------------------------------|------------|--------|-------|-----|------|-----------|
 | 00-00    | Reserved                         |            |        |       |     |      |           |

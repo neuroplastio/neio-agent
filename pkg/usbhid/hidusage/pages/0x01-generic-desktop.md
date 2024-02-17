@@ -1,3 +1,9 @@
+---
+name: Generic Desktop Page
+code: 0x01
+---
+# Usage Table
+
 | Usage ID | Usage Name                                 | Usage Types |
 |----------|--------------------------------------------|-------------|
 | 00       | Undefined                                  |             |

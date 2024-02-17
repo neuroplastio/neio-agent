@@ -1,3 +1,9 @@
+---
+name: Ordinal Page
+code: 0x0A
+---
+# Usage Table
+
 | Usage ID | Usage Name     | Usage Types |
 |----------|----------------|-------------|
 | 00       | Reserved       |             |

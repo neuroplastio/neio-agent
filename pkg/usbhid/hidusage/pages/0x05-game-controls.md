@@ -1,3 +1,9 @@
+---
+name: Game Controls Page
+code: 0x05
+---
+# Usage Table
+
 | Usage ID | Usage Name             | Usage Types |
 |----------|------------------------|-------------|
 | 00       | Undefined              |             |

@@ -1,3 +1,9 @@
+---
+name: Button Page
+code: 0x09
+---
+# Usage Table
+
 | Usage ID | Usage Name                 | Usage Types |
 |----------|----------------------------|-------------|
 | 00       | No Button Pressed          | See Note    |

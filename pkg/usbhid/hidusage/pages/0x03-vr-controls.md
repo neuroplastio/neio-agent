@@ -1,3 +1,9 @@
+---
+name: VR Controls Page
+code: 0x03
+---
+# Usage Table
+
 | Usage ID | Usage Name             | Usage Types |
 |----------|------------------------|-------------|
 | 00       | Undefined              |             |

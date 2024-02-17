@@ -1,3 +1,9 @@
+---
+name: LED Page
+code: 0x08
+---
+# Usage Table
+
 | Usage ID | Usage Name                    | Usage Types |
 |----------|-------------------------------|-------------|
 | 00       | Undefined                     |             |
