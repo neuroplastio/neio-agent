@@ -1,0 +1,61 @@
+devices:
+- address: 6666:0000:255
+  id: nplast-io-(6666:0000)
+  name: ' nplast-io (6666:0000)'
+- address: 6666:6666:255
+  id: nplast-io-(6666:6666)
+  name: ' nplast-io (6666:6666)'
+- address: 048d:5702:0
+  id: ite-tech.-inc.-ite-device-(048d:5702)
+  name: ITE Tech. Inc. ITE Device (048d:5702)
+- address: 3434:fe0e:0
+  id: keychron
+  name: Keychron K8 RGB (3434:fe0e:0)
+- address: 3434:fe0e:1
+  id: keychron-1
+  name: Keychron K8 RGB (3434:fe0e:1)
+- address: 3434:fe0e:2
+  id: keychron-2
+  name: Keychron K8 RGB (3434:fe0e:2)
+- address: 046d:c547:2
+  id: logitech-usb-receiver-(046d:c547)
+  name: Logitech USB Receiver (046d:c547)
+- address: 046d:c547:1
+  id: logitech-usb-receiver-(046d:c547)
+  name: Logitech USB Receiver (046d:c547)
+- address: 046d:c548:2
+  id: logitech-usb-receiver-(046d:c548)
+  name: Logitech USB Receiver (046d:c548)
+- address: 046d:c548:0
+  id: logitech-usb-receiver-(046d:c548)
+  name: Logitech USB Receiver (046d:c548)
+- address: 046d:c548:1
+  id: logitech-usb-receiver-(046d:c548)
+  name: Logitech USB Receiver (046d:c548)
+- address: 046d:c548:3
+  id: logitech-usb-receiver-(046d:c548)
+  name: Logitech USB Receiver (046d:c548)
+- address: 534d:2109:4
+  id: macrosilicon-usb3.-0-capture-(534d:2109)
+  name: MACROSILICON USB3. 0 capture (534d:2109)
+- address: 3297:1969:1
+  id: moonlander-1
+  name: Moonlander
+- address: 3297:1969:3
+  id: moonlander-kb
+  name: Moonlander Keyboard
+- address: 0bda:1100:0
+  id: realtek-hid-device-(0bda:1100)
+  name: Realtek HID Device (0bda:1100)
+- address: 046d:c547:0
+  id: x-pro-superlight
+  name: X Pro Superlight
+- address: 046d:0aaf:3
+  id: yeti-x
+  name: Yeti X
+- address: 3297:1969:2
+  id: zsa-technology-labs-moonlander-mark-i-(3297:1969)
+  name: ZSA Technology Labs Moonlander Mark I (3297:1969)
+- address: 3297:1969:0
+  id: zsa-technology-labs-moonlander-mark-i-(3297:1969)
+  name: ZSA Technology Labs Moonlander Mark I (3297:1969)

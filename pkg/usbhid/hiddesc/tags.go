@@ -52,6 +52,10 @@ func (t Tag) PayloadSize() TagItemSize {
 	return TagItemSize(t & 0x03)
 }
 
+func (t Tag) WithItemSize(size TagItemSize) Tag {
+	return t & 0xFC | Tag(size)
+}
+
 type TagItemType uint8
 
 const (

@@ -5,6 +5,51 @@ type ReportDescriptor struct {
 	Collections []Collection
 }
 
+func (r ReportDescriptor) GetInputReports() []Report {
+	itemMap := make(map[uint8][]DataItem)
+	for _, collection := range r.Collections {
+		for _, report := range collection.GetInputReport() {
+			itemMap[report.ID] = append(itemMap[report.ID], report.Items...)
+		}
+	}
+	reports := make([]Report, 0, len(itemMap))
+	for id, items := range itemMap {
+		reports = append(reports, Report{
+			ID:    id,
+			Items: items,
+		})
+	}
+	return reports
+}
+
+func (r ReportDescriptor) GetInputReport(reportID uint8) (Report, bool) {
+	for _, collection := range r.Collections {
+		for _, report := range collection.GetInputReport() {
+			if report.ID == reportID {
+				return report, true
+			}
+		}
+	}
+	return Report{}, false
+}
+
+func (r ReportDescriptor) HasReportID() bool {
+	for _, collection := range r.Collections {
+		if collection.HasReportID() {
+			return true
+		}
+	}
+	return false
+}
+
+func (r ReportDescriptor) MaxReportSize() int {
+	maxSize := 0
+	for _, collection := range r.Collections {
+		maxSize += collection.MaxReportSize()
+	}
+	return maxSize
+}
+
 type CollectionType uint8
 
 const (
@@ -32,6 +77,62 @@ type Collection struct {
 	Items []MainItem
 }
 
+type Report struct {
+	ID    uint8
+	Items []DataItem
+}
+
+// GetInputReport returns a list of reports that are defined in the collection.
+func (c Collection) GetInputReport() []Report {
+	itemMap := make(map[uint8][]DataItem)
+	for _, item := range c.Items {
+		if item.DataItem != nil {
+			if item.Type != MainItemTypeInput {
+				continue
+			}
+			itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
+		}
+		if item.Collection != nil {
+			for _, report := range item.Collection.GetInputReport() {
+				itemMap[report.ID] = append(itemMap[report.ID], report.Items...)
+			}
+		}
+	}
+	reports := make([]Report, 0, len(itemMap))
+	for id, items := range itemMap {
+		reports = append(reports, Report{
+			ID:    id,
+			Items: items,
+		})
+	}
+	return reports
+}
+
+func (c Collection) MaxReportSize() int {
+	size := 0
+	for _, item := range c.Items {
+		if item.DataItem != nil {
+			size += int(item.DataItem.ReportSize)
+		}
+		if item.Collection != nil {
+			size += item.Collection.MaxReportSize()
+		}
+	}
+	return size
+}
+
+func (c Collection) HasReportID() bool {
+	for _, item := range c.Items {
+		if item.DataItem != nil && item.DataItem.ReportID != 0 {
+			return true
+		}
+		if item.Collection != nil && item.Collection.HasReportID() {
+			return true
+		}
+	}
+	return false
+}
+
 type DataFlags uint32
 
 const (
@@ -45,6 +146,46 @@ const (
 	DataFlagVolatile                            // 0 = Non-volatile, 1 = Volatile, not applicable to Input
 	DataFlagBufferedBytes                       // 0 = Bit field, 1 = Buffered bytes
 )
+
+func (d DataFlags) IsConstant() bool {
+	return d&DataFlagConstant != 0
+}
+
+func (d DataFlags) IsVariable() bool {
+	return d&DataFlagVariable != 0
+}
+
+func (d DataFlags) IsArray() bool {
+	return !d.IsVariable()
+}
+
+func (d DataFlags) IsRelative() bool {
+	return d&DataFlagRelative != 0
+}
+
+func (d DataFlags) IsWrap() bool {
+	return d&DataFlagWrap != 0
+}
+
+func (d DataFlags) IsNonLinear() bool {
+	return d&DataFlagNonLinear != 0
+}
+
+func (d DataFlags) IsNoPreferred() bool {
+	return d&DataFlagNoPreferred != 0
+}
+
+func (d DataFlags) IsNullState() bool {
+	return d&DataFlagNullState != 0
+}
+
+func (d DataFlags) IsVolatile() bool {
+	return d&DataFlagVolatile != 0
+}
+
+func (d DataFlags) IsBufferedBytes() bool {
+	return d&DataFlagBufferedBytes != 0
+}
 
 // MainItemType is not a part of the spec, but an internal abstraction.
 // Input, output and feature items carry mostly the same information.
@@ -73,48 +214,41 @@ type MainItem struct {
 // The number of data fields in an item can be determined by examining the
 // Report Size and Report Count values. For example an item with a Report
 // Size of 8 bits and a Report Count of 3 has three 8-bit data fields.
-// TODO: when setting up data item, it is possible to specify multiple usages and other properties. Keep track of that.
 type DataItem struct {
 	Flags        DataFlags
-	UsagePage    uint16
+	UsagePage    uint16    
 	UsageIDs     []uint16
 	UsageMinimum uint16
 	UsageMaximum uint16
-	ReportCount  uint8
-	ReportSize   uint8
+	ReportCount  uint32
+	ReportSize   uint32
 	ReportID     uint8
 
 	DesignatorIndex   uint8
 	DesignatorMinimum uint8
 	DesignatorMaximum uint8
 
-	LogicalMinimum  int16
-	LogicalMaximum  int16
-	PhysicalMinimum int16
-	PhysicalMaximum int16
-	UnitExponent    uint8
-	Unit            uint8
+	LogicalMinimum  int32
+	LogicalMaximum  int32
+	PhysicalMinimum int32
+	PhysicalMaximum int32
+	UnitExponent    uint32
+	Unit            uint32
 }
 
-type Control struct {
-	Flags       DataFlags // same as in DataItem
-	UsagePage   uint16    // same as in DataItem
-	ReportIndex uint8     // index of this control in the DataItem
-	ReportSize  uint8     // same as in DataItem
-	ReportID    uint8     // same as in DataItem
-
-	UsageID      uint16
-	UsageMinimum uint16
-	UsageMaximum uint16
-
-	DesignatorIndex   uint8
-	DesignatorMinimum uint8
-	DesignatorMaximum uint8
-
-	LogicalMinimum  int16
-	LogicalMaximum  int16
-	PhysicalMinimum int16
-	PhysicalMaximum int16
-	UnitExponent    uint16
-	Unit            uint16
+// NewUsage creates a new Usage from a UsagePage and UsageID.
+func NewUsage(usagePage, usageID uint16) Usage {
+	return Usage(uint32(usagePage)<<16 | uint32(usageID))
 }
+
+// Usage is a combination of UsagePage and UsageID.
+type Usage uint32
+
+func (u Usage) Page() uint16 {
+	return uint16(u >> 16)
+}
+
+func (u Usage) UsageID() uint16 {
+	return uint16(u)
+}
+

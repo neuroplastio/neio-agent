@@ -2,6 +2,7 @@ package hiddesc
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 )
@@ -14,22 +15,44 @@ func toUint16(payload []byte) (uint16, error) {
 		return 0, fmt.Errorf("uint16 payload is missing")
 	}
 	if len(payload) == 1 {
-		return uint16(payload[0]), nil
+		payload = append(payload, 0)
 	}
 	return binary.LittleEndian.Uint16(payload), nil
 }
 
-func toInt16(payload []byte) (int16, error) {
-	if len(payload) > 2 {
-		return 0, fmt.Errorf("int16 payload too long")
+func toUint32(payload []byte) (uint32, error) {
+	if len(payload) > 4 {
+		return 0, fmt.Errorf("uint32 payload too long: %s", hex.Dump(payload))
 	}
 	if len(payload) == 0 {
-		return 0, fmt.Errorf("int16 payload is missing")
+		return 0, fmt.Errorf("uint32 payload is missing")
 	}
-	if len(payload) == 1 {
-		return int16(payload[0]), nil
+	if len(payload) < 4 {
+		// pad payload
+		payload = append(payload, make([]byte, 4-len(payload))...)
 	}
-	return int16(binary.LittleEndian.Uint16(payload)), nil
+	return binary.LittleEndian.Uint32(payload), nil
+}
+
+func toInt32(payload []byte) (int32, error) {
+	switch len(payload) {
+	case 1:
+		return int32(int8(payload[0])), nil
+	case 2:
+		val, err := toUint16(payload)
+		if err != nil {
+			return 0, fmt.Errorf("int32: %w", err)
+		}
+		return int32(int16(val)), nil
+	case 4:
+		val, err := toUint32(payload)
+		if err != nil {
+			return 0, fmt.Errorf("int32: %w", err)
+		}
+		return int32(val), nil
+	default:
+		return 0, fmt.Errorf("int32: payload length is not 1, 2 or 4")
+	}
 }
 
 func newDataItem(state *reportDescriptorState, flags DataFlags) *DataItem {
@@ -154,7 +177,7 @@ func cmdUsagePage(state *reportDescriptorState, payload []byte) error {
 }
 
 func cmdLogicalMinimum(state *reportDescriptorState, payload []byte) error {
-	val, err := toInt16(payload)
+	val, err := toInt32(payload)
 	if err != nil {
 		return fmt.Errorf("logical minimum: %w", err)
 	}
@@ -163,7 +186,7 @@ func cmdLogicalMinimum(state *reportDescriptorState, payload []byte) error {
 }
 
 func cmdLogicalMaximum(state *reportDescriptorState, payload []byte) error {
-	val, err := toInt16(payload)
+	val, err := toInt32(payload)
 	if err != nil {
 		return fmt.Errorf("logical maximum: %w", err)
 	}
@@ -172,7 +195,7 @@ func cmdLogicalMaximum(state *reportDescriptorState, payload []byte) error {
 }
 
 func cmdPhysicalMinimum(state *reportDescriptorState, payload []byte) error {
-	val, err := toInt16(payload)
+	val, err := toInt32(payload)
 	if err != nil {
 		return fmt.Errorf("physical minimum: %w", err)
 	}
@@ -181,7 +204,7 @@ func cmdPhysicalMinimum(state *reportDescriptorState, payload []byte) error {
 }
 
 func cmdPhysicalMaximum(state *reportDescriptorState, payload []byte) error {
-	val, err := toInt16(payload)
+	val, err := toInt32(payload)
 	if err != nil {
 		return fmt.Errorf("physical maximum: %w", err)
 	}
@@ -190,42 +213,62 @@ func cmdPhysicalMaximum(state *reportDescriptorState, payload []byte) error {
 }
 
 func cmdUnitExponent(state *reportDescriptorState, payload []byte) error {
-	if len(payload) != 1 {
-		return fmt.Errorf("unit exponent: payload length is not 1")
+	if len(payload) == 0 {
+		return fmt.Errorf("unit exponent: payload is missing")
 	}
-	state.global.unitExponent = payload[0]
+	val, err := toUint32(payload)
+	if err != nil {
+		return fmt.Errorf("unit exponent: %w", err)
+	}
+	state.global.unitExponent = val
 	return nil
 }
 
 func cmdUnit(state *reportDescriptorState, payload []byte) error {
-	if len(payload) != 1 {
-		return fmt.Errorf("unit: payload length is not 1")
+	if len(payload) == 0 {
+		return fmt.Errorf("unit: payload is missing")
 	}
-	state.global.unit = payload[0]
+	val, err := toUint32(payload)
+	if err != nil {
+		return fmt.Errorf("unit: %w", err)
+	}
+	state.global.unit = val
 	return nil
 }
 
 func cmdReportSize(state *reportDescriptorState, payload []byte) error {
-	if len(payload) != 1 {
-		return fmt.Errorf("report size: payload length is not 1")
+	if len(payload) == 0 {
+		return fmt.Errorf("report size: payload is missing")
 	}
-	state.global.reportSize = payload[0]
+	val, err := toUint32(payload)
+	if err != nil {
+		return fmt.Errorf("report size: %w", err)
+	}
+	state.global.reportSize = val
 	return nil
 }
 
 func cmdReportID(state *reportDescriptorState, payload []byte) error {
-	if len(payload) != 1 {
-		return fmt.Errorf("report id: payload length is not 1")
+	if len(payload) == 0 {
+		return fmt.Errorf("report id: payload is missing")
 	}
-	state.global.reportID = payload[0]
+	val, err := toUint32(payload)
+	if err != nil {
+		return fmt.Errorf("report id: %w", err)
+	}
+	state.global.reportID = uint8(val)
 	return nil
 }
 
 func cmdReportCount(state *reportDescriptorState, payload []byte) error {
-	if len(payload) != 1 {
-		return fmt.Errorf("report count: payload length is not 1")
+	if len(payload) == 0 {
+		return fmt.Errorf("report count: payload is missing")
 	}
-	state.global.reportCount = payload[0]
+	val, err := toUint32(payload)
+	if err != nil {
+		return fmt.Errorf("report count: %w", err)
+	}
+	state.global.reportCount = val
 	return nil
 }
 

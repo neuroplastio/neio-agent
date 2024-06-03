@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+
+message Output {
+} 
+
+message Input {
+}
+
+message Mutator {
+}
+
+
+message Node {
+	string id = 1;
+	oneof node {
+		Input input = 2;
+		Output output = 3;
+		Mutator mutator = 4;
+	}
+}
+
+message Edge {
+	string source = 1;
+	string target = 2;
+}
+
+

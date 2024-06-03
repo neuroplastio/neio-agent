@@ -1,0 +1,5 @@
+uhid:
+  - id: neuroplastio
+    name: Neuroplast.io
+    vendorId: 0x6668
+    productId: 0x6666
