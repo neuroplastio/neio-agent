@@ -149,6 +149,15 @@ func (b Bits) ClearAll() bool {
 	return changed
 }
 
+func (b Bits) IsEmpty() bool {
+	for _, byte := range b.bytes {
+		if byte != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func (b Bits) EachUint8(f func(int, uint8) bool) {
 	for i, byte := range b.bytes {
 		if !f(i, byte) {

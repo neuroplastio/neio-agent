@@ -3,6 +3,8 @@ package flowsvc
 import (
 	"context"
 	"time"
+
+	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 )
 
 // ActionTap is not supposed to be used as a standalone action. It is a base action that is used to create more complex actions.
@@ -18,7 +20,7 @@ func newTapAction(action HIDUsageAction, duration time.Duration) *ActionTap {
 	}
 }
 
-func (a *ActionTap) Usages() []Usage {
+func (a *ActionTap) Usages() []hidparse.Usage {
 	return a.action.Usages()
 }
 

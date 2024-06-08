@@ -36,8 +36,8 @@ func (r *Registry[C, P]) Register(id string, creator ComponentCreator[C, P]) {
 
 func (r *Registry[C, P]) New(id string, config json.RawMessage) (C, error) {
 	creator, ok := r.components[id]
-	var component C
 	if !ok {
+		var component C
 		return component, fmt.Errorf("component not found: %s", id)
 	}
 	return creator(config, r.provider)

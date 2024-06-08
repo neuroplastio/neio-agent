@@ -165,7 +165,7 @@ func (s *Service) compile(cfg FlowConfig) error {
 	for _, node := range cfg.Nodes {
 		n, err := s.nodeRegistry.New(node.Type, node.Config)
 		if err != nil {
-			return fmt.Errorf("failed to create node %s: %w", node.ID, err)
+			return fmt.Errorf("failed to create node %s (%s): %w", node.ID, node.Type, err)
 		}
 		nodeIndex[node.ID] = n
 		g.AddNode(node.ID, n)

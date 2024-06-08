@@ -1,6 +1,7 @@
 package flowsvc
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 
@@ -13,6 +14,7 @@ func NewState(log *zap.Logger) *FlowState {
 	return &FlowState{
 		variables: xsync.NewMapOf[string, VariableValue](),
 		enums:     xsync.NewMapOf[string, map[string]int](),
+		lists: xsync.NewMapOf[string, *list.List](),
 		log:       log,
 		bus:       bus.NewBus[FlowStateEventKey, FlowStateEvent](log),
 	}
@@ -41,6 +43,7 @@ const (
 type FlowState struct {
 	variables *xsync.MapOf[string, VariableValue]
 	enums     *xsync.MapOf[string, map[string]int]
+	lists *xsync.MapOf[string, *list.List]
 
 	log *zap.Logger
 	bus *FlowStateBus
@@ -119,4 +122,43 @@ func (f *FlowState) GetEnumValue(name string) (int, error) {
 		return 0, fmt.Errorf("variable %s is not an int", name)
 	}
 	return *value.Int, nil
+}
+
+func (f *FlowState) listPush(name string, val any) func() {
+	var el *list.Element
+	// TODO: emit changed event
+	f.lists.Compute(name, func(l *list.List, loaded bool) (newValue *list.List, delete bool) {
+		if !loaded {
+			l = list.New()
+		}
+		el = l.PushFront(val)
+		return l, false
+	})
+	return func() {
+		// TODO: emit changed event if list.Front changed
+		f.lists.Compute(name, func(l *list.List, loaded bool) (newValue *list.List, delete bool) {
+			l.Remove(el)
+			return l, false
+		})
+	}
+}
+
+func NewStateList[T any](f *FlowState, name string) StateList[T] {
+	return StateList[T]{
+		f: f,
+		name: name,
+	}
+}
+
+type StateList[T any] struct {
+	f *FlowState
+	name string
+}
+
+func (s StateList[T]) Push(value T) func() {
+	return s.f.listPush(s.name, value)
+}
+
+type EnumDefinition[T comparable] struct {
+	values []T
 }

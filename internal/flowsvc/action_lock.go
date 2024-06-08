@@ -3,11 +3,9 @@ package flowsvc
 import (
 	"context"
 	"encoding/json"
-)
 
-type lockConfig struct {
-	Action HIDUsageActionConfig `json:"action"`
-}
+	"github.com/neuroplastio/neuroplastio/internal/hidparse"
+)
 
 type LockAction struct {
 	action HIDUsageAction
@@ -16,13 +14,7 @@ type LockAction struct {
 }
 
 func NewLockAction(data json.RawMessage, provider *HIDActionProvider) (HIDUsageAction, error) {
-	var cfg lockConfig
-	err := json.Unmarshal(data, &cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	action, err := provider.ActionRegistry.New(cfg.Action.Type, cfg.Action.Config)
+	action, err := provider.ActionRegistry.NewFromJSON(data)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +24,7 @@ func NewLockAction(data json.RawMessage, provider *HIDActionProvider) (HIDUsageA
 	}, nil
 }
 
-func (a *LockAction) Usages() []Usage {
+func (a *LockAction) Usages() []hidparse.Usage {
 	return a.action.Usages()
 }
 

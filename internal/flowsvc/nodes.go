@@ -18,6 +18,7 @@ func NewNodeProvider(hid *hidsvc.Service, log *zap.Logger, actionRegistry *Actio
 		HID:            hid,
 		Log:            log,
 		ActionRegistry: actionRegistry,
+		State: state,
 	}
 }
 

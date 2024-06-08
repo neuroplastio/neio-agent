@@ -5,6 +5,20 @@ import (
 	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hiddesc"
 )
 
+type Usage uint32
+
+func (u Usage) Page() uint16 {
+	return uint16(u >> 16)
+}
+
+func (u Usage) ID() uint16 {
+	return uint16(u)
+}
+
+func NewUsage(page, id uint16) Usage {
+	return Usage(uint32(page)<<16 | uint32(id))
+}
+
 type DescriptorQueryier struct {
 	reports []hiddesc.Report
 }
@@ -32,79 +46,91 @@ func (d *DescriptorQueryier) FindByUsagePage(page uint16) []QueryResult {
 }
 
 type UsageSet interface {
-	HasUsage(bits bits.Bits, usageID uint16) bool
-	ReplaceUsage(bits bits.Bits, from, to uint16) bool
-	SetUsage(bits bits.Bits, usageID uint16) bool
-	ClearUsage(bits bits.Bits, usageID uint16) bool
+	HasUsage(bits bits.Bits, usage Usage) bool
+	ReplaceUsage(bits bits.Bits, from, to Usage) bool
+	SetUsage(bits bits.Bits, usage Usage) bool
+	ClearUsage(bits bits.Bits, usage Usage) bool
+	Contains(usage Usage) bool
 }
 
 type UsageFlags struct {
+	usagePage uint16
 	minimum uint16
 	maximum uint16
 }
 
-func NewUsageFlags(minimum, maximum uint16) UsageFlags {
+func NewUsageFlags(usagePage uint16, minimum, maximum uint16) UsageFlags {
 	return UsageFlags{
+		usagePage: usagePage,
 		minimum: minimum,
 		maximum: maximum,
 	}
 }
 
-func (u UsageFlags) HasUsage(bits bits.Bits, usageID uint16) bool {
-	if usageID < u.minimum || usageID > u.maximum {
+func (u UsageFlags) HasUsage(bits bits.Bits, usage Usage) bool {
+	if !u.Contains(usage) {
 		return false
 	}
-	return bits.IsSet(int(usageID - u.minimum))
+	return bits.IsSet(int(usage.ID() - u.minimum))
 }
 
-func (u UsageFlags) ReplaceUsage(bits bits.Bits, from, to uint16) bool {
-	if from < u.minimum || from > u.maximum || to < u.minimum || to > u.maximum {
+func (u UsageFlags) ReplaceUsage(bits bits.Bits, from, to Usage) bool {
+	if !u.Contains(from) || !u.Contains(to) {
 		return false
 	}
-	wasSet := bits.Clear(int(from - u.minimum))
+	wasSet := bits.Clear(int(from.ID() - u.minimum))
 	if wasSet {
-		bits.Set(int(to - u.minimum))
+		bits.Set(int(to.ID() - u.minimum))
 	}
 	return wasSet
 }
 
-func (u UsageFlags) SetUsage(bits bits.Bits, usageID uint16) bool {
-	if usageID < u.minimum || usageID > u.maximum {
+func (u UsageFlags) SetUsage(bits bits.Bits, usage Usage) bool {
+	if !u.Contains(usage) {
 		return false
 	}
-	return bits.Set(int(usageID - u.minimum))
+	return bits.Set(int(usage.ID() - u.minimum))
 }
 
-func (u UsageFlags) ClearUsage(bits bits.Bits, usageID uint16) bool {
-	if usageID < u.minimum || usageID > u.maximum {
+func (u UsageFlags) ClearUsage(bits bits.Bits, usage Usage) bool {
+	if !u.Contains(usage) {
 		return false
 	}
-	return bits.Clear(int(usageID - u.minimum))
+	return bits.Clear(int(usage.ID() - u.minimum))
+}
+
+func (u UsageFlags) Contains(usage Usage) bool {
+	if u.usagePage != usage.Page() {
+		return false
+	}
+	return usage.ID() >= u.minimum && usage.ID() <= u.maximum
 }
 
 type UsageSelector struct {
 	size    int
+	usagePage uint16
 	minimum uint16
 	maximum uint16
 }
 
-func NewUsageSelector(size int, minimum, maximum uint16) UsageSelector {
+func NewUsageSelector(size int, usagePage, minimum, maximum uint16) UsageSelector {
 	return UsageSelector{
 		size:    size,
+		usagePage: usagePage,
 		minimum: minimum,
 		maximum: maximum,
 	}
 }
 
-func (u UsageSelector) HasUsage(bits bits.Bits, usageID uint16) bool {
-	if usageID < u.minimum || usageID > u.maximum {
+func (u UsageSelector) HasUsage(bits bits.Bits, usage Usage) bool {
+	if !u.Contains(usage) {
 		return false
 	}
 	has := false
 	switch u.size {
 	case 8:
 		bits.EachUint8(func(i int, val uint8) bool {
-			if uint16(val) == usageID {
+			if uint16(val) == usage.ID() {
 				has = true
 				return false
 			}
@@ -112,7 +138,7 @@ func (u UsageSelector) HasUsage(bits bits.Bits, usageID uint16) bool {
 		})
 	case 16:
 		bits.EachUint16(func(i int, val uint16) bool {
-			if val == usageID {
+			if val == usage.ID() {
 				has = true
 				return false
 			}
@@ -122,26 +148,26 @@ func (u UsageSelector) HasUsage(bits bits.Bits, usageID uint16) bool {
 	return has
 }
 
-func (u UsageSelector) ReplaceUsage(bits bits.Bits, from, to uint16) bool {
-	if from < u.minimum || from > u.maximum || to < u.minimum || to > u.maximum {
+func (u UsageSelector) ReplaceUsage(bits bits.Bits, from, to Usage) bool {
+	if !u.Contains(from) || !u.Contains(to) {
 		return false
 	}
 	wasSet := false
 	switch u.size {
 	case 8:
 		bits.EachUint8(func(i int, val uint8) bool {
-			if uint16(val) == from {
+			if uint16(val) == from.ID() {
 				wasSet = true
-				bits.SetUint8(i, uint8(to))
+				bits.SetUint8(i, uint8(to.ID()))
 				return false
 			}
 			return true
 		})
 	case 16:
 		bits.EachUint16(func(i int, val uint16) bool {
-			if val == from {
+			if val == from.ID() {
 				wasSet = true
-				bits.SetUint16(i, to)
+				bits.SetUint16(i, to.ID())
 				return false
 			}
 			return true
@@ -150,29 +176,29 @@ func (u UsageSelector) ReplaceUsage(bits bits.Bits, from, to uint16) bool {
 	return wasSet
 }
 
-func (u UsageSelector) SetUsage(bits bits.Bits, usageID uint16) bool {
-	if usageID < u.minimum || usageID > u.maximum {
+func (u UsageSelector) SetUsage(bits bits.Bits, usage Usage) bool {
+	if !u.Contains(usage) {
 		return false
 	}
 	switch u.size {
 	case 8:
 		bits.EachUint8(func(i int, val uint8) bool {
-			if val == uint8(usageID) {
+			if val == uint8(usage.ID()) {
 				return false
 			}
 			if val == 0 {
-				bits.SetUint8(i, uint8(usageID))
+				bits.SetUint8(i, uint8(usage.ID()))
 				return false
 			}
 			return true
 		})
 	case 16:
 		bits.EachUint16(func(i int, val uint16) bool {
-			if val == usageID {
+			if val == usage.ID() {
 				return false
 			}
 			if val == 0 {
-				bits.SetUint16(i, usageID)
+				bits.SetUint16(i, usage.ID())
 				return false
 			}
 			return true
@@ -181,8 +207,8 @@ func (u UsageSelector) SetUsage(bits bits.Bits, usageID uint16) bool {
 	return true
 }
 
-func (u UsageSelector) ClearUsage(bits bits.Bits, usageID uint16) bool {
-	if usageID < u.minimum || usageID > u.maximum {
+func (u UsageSelector) ClearUsage(bits bits.Bits, usage Usage) bool {
+	if !u.Contains(usage) {
 		return false
 	}
 	switch u.size {
@@ -196,7 +222,7 @@ func (u UsageSelector) ClearUsage(bits bits.Bits, usageID uint16) bool {
 				bits.SetUint8(i-1, val)
 				return true
 			}
-			if uint16(val) == usageID {
+			if uint16(val) == usage.ID() {
 				bits.SetUint8(i, 0)
 				cleared = true
 			}
@@ -212,7 +238,7 @@ func (u UsageSelector) ClearUsage(bits bits.Bits, usageID uint16) bool {
 				bits.SetUint16(i-1, val)
 				return true
 			}
-			if val == usageID {
+			if val == usage.ID() {
 				bits.SetUint16(i, 0)
 				cleared = true
 			}
@@ -220,6 +246,13 @@ func (u UsageSelector) ClearUsage(bits bits.Bits, usageID uint16) bool {
 		})
 	}
 	return true
+}
+
+func (u UsageSelector) Contains(usage Usage) bool {
+	if u.usagePage != usage.Page() {
+		return false
+	}
+	return usage.ID() >= u.minimum && usage.ID() <= u.maximum
 }
 
 type Filter func(hiddesc.DataItem) bool
@@ -263,9 +296,9 @@ func GetUsageSets(desc hiddesc.ReportDescriptor, filter Filter) map[uint8]map[in
 			}
 			switch {
 			case item.Flags.IsArray() && (item.ReportSize == 8 || item.ReportSize == 16):
-				sets[i] = NewUsageSelector(int(item.ReportSize), item.UsageMinimum, item.UsageMaximum)
+				sets[i] = NewUsageSelector(int(item.ReportSize), item.UsagePage, item.UsageMinimum, item.UsageMaximum)
 			case item.Flags.IsVariable() && item.ReportSize == 1:
-				sets[i] = NewUsageFlags(item.UsageMinimum, item.UsageMaximum)
+				sets[i] = NewUsageFlags(item.UsagePage, item.UsageMinimum, item.UsageMaximum)
 			}
 		}
 		if len(sets) > 0 {

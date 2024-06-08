@@ -3,6 +3,8 @@ package flowsvc
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 )
 
 type setVarConfig struct {
@@ -10,10 +12,9 @@ type setVarConfig struct {
 	Value   any `json:"value"`
 }
 
-type SetVarAction struct {
-	state *FlowState
+type SetAction struct {
+	state StateList[any]
 
-	name string
 	value   any
 }
 
@@ -23,20 +24,16 @@ func NewSetAction(data json.RawMessage, provider *HIDActionProvider) (HIDUsageAc
 	if err != nil {
 		return nil, err
 	}
-	return &SetVarAction{
-		state: provider.State,
-		name: cfg.Name,
+	return &SetAction{
+		state: NewStateList[any](provider.State, cfg.Name),
 		value: cfg.Value,
 	}, nil
 }
 
-func (a *SetVarAction) Usages() []Usage {
-	return []Usage{}
+func (a *SetAction) Usages() []hidparse.Usage {
+	return []hidparse.Usage{}
 }
 
-func (a *SetVarAction) Activate(ctx context.Context, activator UsageActivator) func() {
-	// TODO: untyped state API
-	pop := a.state.PushValue(a.name, a.value)
-	return pop
+func (a *SetAction) Activate(ctx context.Context, activator UsageActivator) func() {
+	return a.state.Push(a.value)
 }
-

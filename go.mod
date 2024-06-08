@@ -37,6 +37,7 @@ require (
 	github.com/sstallion/go-hid v0.14.1
 	github.com/stoewer/go-strcase v1.3.0
 	github.com/yuin/goldmark-meta v1.1.0
+	go.uber.org/atomic v1.11.0
 	go.uber.org/dig v1.17.1
 	golang.org/x/sync v0.7.0
 	gopkg.in/yaml.v2 v2.4.0 // indirect

@@ -58,7 +58,6 @@ func (r *Router) Start(ctx context.Context, up FlowStream, down FlowStream) erro
 			fmt.Println("Router", r.id, "route changed to", *event.Message.Value.Int)
 			currentRoute = *event.Message.Value.Int
 		case event := <-in:
-			fmt.Println("Router", r.id, "forwarding to", nodeIDs[currentRoute])
 			down.Publish(ctx, nodeIDs[currentRoute], event.Message)
 		case <-ctx.Done():
 			return nil
