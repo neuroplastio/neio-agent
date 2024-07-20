@@ -2,6 +2,7 @@ package flowsvc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -18,15 +19,16 @@ type Service struct {
 	hid      *hidsvc.Service
 	flowPath string
 
-	mu         sync.Mutex
-	ctx        context.Context
-	flowCtx    context.Context
-	flowCancel context.CancelFunc
-	flow       *CompiledGraph
-	bus        *FlowBus
-	running    chan struct{}
+	mu          sync.Mutex
+	ctx         context.Context
+	graphCtx    context.Context
+	graphCancel context.CancelFunc
+	graph       *GraphV2
+	bus         *FlowBus
+	running     chan struct{}
 
-	nodeRegistry *NodeRegistry
+	actionRegistry *ActionRegistry
+	nodeRegistry   *NodeRegistry
 
 	state *FlowState
 }
@@ -47,6 +49,7 @@ type (
 	FlowPublisher  = bus.Publisher[FlowEvent]
 	FlowSubscriber = bus.Subscriber[FlowEventKey, FlowEvent]
 	FlowStream     struct {
+		ctx        context.Context
 		nodeID     string
 		nodeIDs    []string
 		subscriber FlowSubscriber
@@ -54,12 +57,13 @@ type (
 	}
 )
 
-func NewFlowStream(nodeID string, subscriber FlowSubscriber, publishers map[string]FlowPublisher) FlowStream {
+func NewFlowStream(ctx context.Context, nodeID string, subscriber FlowSubscriber, publishers map[string]FlowPublisher) FlowStream {
 	nodeIDs := make([]string, 0, len(publishers))
 	for nodeID := range publishers {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	return FlowStream{
+		ctx:        ctx,
 		nodeID:     nodeID,
 		nodeIDs:    nodeIDs,
 		subscriber: subscriber,
@@ -67,16 +71,15 @@ func NewFlowStream(nodeID string, subscriber FlowSubscriber, publishers map[stri
 	}
 }
 
-func (f FlowStream) Publish(ctx context.Context, toNodeID string, msg FlowEvent) {
-	msg.SourceNodeID = f.nodeID
-	ctx, cancel := context.WithTimeout(ctx, 100*time.Microsecond)
+func (f FlowStream) Publish(toNodeID string, msg FlowEvent) {
+	ctx, cancel := context.WithTimeout(f.ctx, 100*time.Microsecond)
 	f.publishers[toNodeID](ctx, msg)
 	cancel()
 }
 
-func (f FlowStream) Broadcast(ctx context.Context, msg FlowEvent) {
+func (f FlowStream) Broadcast(msg FlowEvent) {
 	for _, nodeID := range f.nodeIDs {
-		f.Publish(ctx, nodeID, msg)
+		f.Publish(nodeID, msg)
 	}
 }
 
@@ -93,17 +96,24 @@ const (
 	FlowEventUpstream
 )
 
-func New(log *zap.Logger, config *configsvc.Service, flowPath string, hidSvc *hidsvc.Service) *Service {
+func New(
+	log *zap.Logger,
+	config *configsvc.Service,
+	flowPath string,
+	hidSvc *hidsvc.Service,
+	nodes *NodeRegistry,
+	actions *ActionRegistry,
+) *Service {
 	state := NewState(log)
-	actionRegistry := NewActionRegistry(state)
 	return &Service{
-		config:       config,
-		log:          log,
-		flowPath:     flowPath,
-		hid:          hidSvc,
-		bus:          bus.NewBus[FlowEventKey, FlowEvent](log),
-		nodeRegistry: NewNodeRegistry(log, hidSvc, actionRegistry, state),
-		state:        state,
+		config:         config,
+		log:            log,
+		flowPath:       flowPath,
+		hid:            hidSvc,
+		bus:            bus.NewBus[FlowEventKey, FlowEvent](log),
+		actionRegistry: actions,
+		nodeRegistry:   nodes,
+		state:          state,
 	}
 }
 
@@ -139,7 +149,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start flow state: %w", err)
 	}
 
-	err = s.compile(cfg)
+	err = s.startGraph(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to compile flow: %w", err)
 	}
@@ -152,52 +162,43 @@ func (s *Service) onConfigChange(cfg FlowConfig, err error) {
 		s.log.Error("failed to parse config", zap.Error(err))
 		return
 	}
-	err = s.compile(cfg)
-	if err != nil {
-		s.log.Error("failed to compile flow", zap.Error(err))
-	}
 }
 
-func (s *Service) compile(cfg FlowConfig) error {
-	g := NewGraph()
+func (s *Service) startGraph(cfg FlowConfig) error {
+	b := NewGraphBuilder()
 
-	nodeIndex := make(map[string]Node)
+	configs := make(map[string]json.RawMessage)
 	for _, node := range cfg.Nodes {
-		n, err := s.nodeRegistry.New(node.Type, node.Config)
+		n, err := s.nodeRegistry.Get(node.Type)
 		if err != nil {
 			return fmt.Errorf("failed to create node %s (%s): %w", node.ID, node.Type, err)
 		}
-		nodeIndex[node.ID] = n
-		g.AddNode(node.ID, n)
+		b = b.AddNode(node.ID, n, node.To)
+		configs[node.ID] = node.Config
 	}
 
-	for _, link := range cfg.Links {
-		err := g.Connect(link.From, link.To)
-		if err != nil {
-			return fmt.Errorf("failed to connect %s -> %s: %w", link.From, link.To, err)
-		}
+	if err := b.Validate(); err != nil {
+		return fmt.Errorf("failed to validate graph: %w", err)
 	}
-
-	compiled, err := NewCompiler(s.log, g).Compile()
+	provider := nodeRunnerProvider{
+		hid:     s.hid,
+		log:     s.log,
+		actions: s.actionRegistry,
+		state:   s.state,
+	}
+	graph, err := b.Build(configs, provider, s.bus)
 	if err != nil {
-		return fmt.Errorf("failed to compile graph: %w", err)
+		return fmt.Errorf("failed to build graph: %w", err)
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.flowCancel != nil {
-		s.flowCancel()
-	}
-	s.flowCtx, s.flowCancel = context.WithCancel(s.ctx)
-	s.flow = compiled
+	s.graphCtx, s.graphCancel = context.WithCancel(s.ctx)
+	s.graph = graph
 	go func() {
-		<-s.flowCtx.Done()
+		<-s.graphCtx.Done()
 		s.log.Info("flow cancelled")
+		close(s.running)
 	}()
 	go func() {
-		// TODO: account for flow restarts
-		defer close(s.running)
-		err := s.flow.Start(s.flowCtx, s.bus)
+		err := s.graph.Run(s.graphCtx)
 		if err != nil {
 			s.log.Error("flow failed", zap.Error(err))
 		}
@@ -205,4 +206,27 @@ func (s *Service) compile(cfg FlowConfig) error {
 	}()
 
 	return nil
+}
+
+type nodeRunnerProvider struct {
+	hid     *hidsvc.Service
+	log     *zap.Logger
+	actions *ActionRegistry
+	state   *FlowState
+}
+
+func (n nodeRunnerProvider) HID() *hidsvc.Service {
+	return n.hid
+}
+
+func (n nodeRunnerProvider) Log() *zap.Logger {
+	return n.log
+}
+
+func (n nodeRunnerProvider) Actions() *ActionRegistry {
+	return n.actions
+}
+
+func (n nodeRunnerProvider) State() *FlowState {
+	return n.state
 }

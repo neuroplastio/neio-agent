@@ -158,6 +158,22 @@ func (b Bits) IsEmpty() bool {
 	return true
 }
 
+func (b Bits) Each(f func(int, bool) bool) {
+	i := 0
+	size := b.Len()
+	for _, b := range b.bytes {
+		for j := 0; j < 8; j++ {
+			if i >= size {
+				return
+			}
+			if !f(i, b&(1<<j) != 0) {
+				return
+			}
+			i++
+		}
+	}
+}
+
 func (b Bits) EachUint8(f func(int, uint8) bool) {
 	for i, byte := range b.bytes {
 		if !f(i, byte) {
@@ -187,11 +203,23 @@ func (b Bits) SetUint8(index int, value uint8) {
 }
 
 func (b Bits) SetUint16(index int, value uint16) {
-	binary.LittleEndian.PutUint16(b.bytes[index*2:], value)
+	binary.LittleEndian.PutUint16(b.bytes[index*2:(index+1)*2], value)
 }
 
 func (b Bits) SetUint32(index int, value uint32) {
-	binary.LittleEndian.PutUint32(b.bytes[index*4:], value)
+	binary.LittleEndian.PutUint32(b.bytes[index*4:(index+1)*2], value)
+}
+
+func (b Bits) Uint8(index int) uint8 {
+	return b.bytes[index]
+}
+
+func (b Bits) Uint16(index int) uint16 {
+	return binary.LittleEndian.Uint16(b.bytes[index*2 : (index+1)*2])
+}
+
+func (b Bits) Uint32(index int) uint32 {
+	return binary.LittleEndian.Uint32(b.bytes[index*4 : (index+1)*4])
 }
 
 func (b Bits) Clone() Bits {
@@ -229,6 +257,18 @@ func NewBitSetFromString(s string) (Bits, error) {
 		}
 	}
 	return b, nil
+}
+
+func NewZeros(bitSize int) Bits {
+	byteSize := bitSize / 8
+	missingBits := uint8(bitSize % 8)
+	if missingBits > 0 {
+		byteSize++
+	}
+	return Bits{
+		bytes:       make([]byte, byteSize),
+		missingBits: missingBits,
+	}
 }
 
 func New(data []byte, missingBits int) Bits {

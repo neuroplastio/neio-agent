@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
+	"github.com/neuroplastio/neuroplastio/hidnodes"
 	"github.com/neuroplastio/neuroplastio/internal/configsvc"
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
@@ -47,14 +48,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	linuxHid := linux.NewBackend(logger, configSvc, a.config.UhidConfig)
 	hidSvc := hidsvc.New(db, logger, time.Now, hidsvc.WithBackend("linux", linuxHid))
 
-	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, hidSvc)
+	nodes := flowsvc.NewNodeRegistry()
+	hidnodes.Register(nodes)
+	actions := flowsvc.NewActionRegistry()
 
-	// uhid, err := hidoutput.NewUhidDriver(a.config.UhidConfig)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to create uhid driver: %w", err)
-	// }
-	// dm := devices.NewManager(logger, a.config.DeviceConfig)
-	// flow := flow.NewManager(a.config.FlowConfig, logger, dm, uhid)
+	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, hidSvc, nodes, actions)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
@@ -64,8 +62,8 @@ func (a *Agent) Run(ctx context.Context) error {
 		return hidSvc.Start(groupCtx)
 	})
 	group.Go(func() error {
-	 	return flowSvc.Start(groupCtx)
-	 })
+		return flowSvc.Start(groupCtx)
+	})
 
 	err = group.Wait()
 	if err != nil {

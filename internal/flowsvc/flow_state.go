@@ -14,7 +14,7 @@ func NewState(log *zap.Logger) *FlowState {
 	return &FlowState{
 		variables: xsync.NewMapOf[string, VariableValue](),
 		enums:     xsync.NewMapOf[string, map[string]int](),
-		lists: xsync.NewMapOf[string, *list.List](),
+		lists:     xsync.NewMapOf[string, *list.List](),
 		log:       log,
 		bus:       bus.NewBus[FlowStateEventKey, FlowStateEvent](log),
 	}
@@ -43,7 +43,7 @@ const (
 type FlowState struct {
 	variables *xsync.MapOf[string, VariableValue]
 	enums     *xsync.MapOf[string, map[string]int]
-	lists *xsync.MapOf[string, *list.List]
+	lists     *xsync.MapOf[string, *list.List]
 
 	log *zap.Logger
 	bus *FlowStateBus
@@ -91,7 +91,7 @@ func (f *FlowState) SetVariable(ctx context.Context, name string, value Variable
 	return nil
 }
 
-func (f *FlowState) RegisterEnum(ctx context.Context, name string, valueMap map[string]int, initialValue int) (FlowStateSubscriber, error) {
+func (f *FlowState) RegisterEnum(name string, valueMap map[string]int, initialValue int) (FlowStateSubscriber, error) {
 	_, loaded := f.enums.LoadOrStore(name, valueMap)
 	if loaded {
 		return nil, fmt.Errorf("enum %s already registered", name)
@@ -145,13 +145,13 @@ func (f *FlowState) listPush(name string, val any) func() {
 
 func NewStateList[T any](f *FlowState, name string) StateList[T] {
 	return StateList[T]{
-		f: f,
+		f:    f,
 		name: name,
 	}
 }
 
 type StateList[T any] struct {
-	f *FlowState
+	f    *FlowState
 	name string
 }
 

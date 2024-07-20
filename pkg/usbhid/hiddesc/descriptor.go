@@ -22,6 +22,26 @@ func (r ReportDescriptor) GetInputReports() []Report {
 	return reports
 }
 
+func (r ReportDescriptor) GetInputDataItems() map[uint8][]DataItem {
+	itemMap := make(map[uint8][]DataItem)
+	for _, collection := range r.Collections {
+		for reportID, items := range collection.GetInputDataItems() {
+			itemMap[reportID] = append(itemMap[reportID], items...)
+		}
+	}
+	return itemMap
+}
+
+func (r ReportDescriptor) GetOutputDataItems() map[uint8][]DataItem {
+	itemMap := make(map[uint8][]DataItem)
+	for _, collection := range r.Collections {
+		for reportID, items := range collection.GetOutputDataItems() {
+			itemMap[reportID] = append(itemMap[reportID], items...)
+		}
+	}
+	return itemMap
+}
+
 func (r ReportDescriptor) GetInputReport(reportID uint8) (Report, bool) {
 	for _, collection := range r.Collections {
 		for _, report := range collection.GetInputReport() {
@@ -86,12 +106,10 @@ type Report struct {
 func (c Collection) GetInputReport() []Report {
 	itemMap := make(map[uint8][]DataItem)
 	for _, item := range c.Items {
-		if item.DataItem != nil {
-			if item.Type != MainItemTypeInput {
-				continue
-			}
-			itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
+		if item.Type != MainItemTypeInput {
+			continue
 		}
+		itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
 		if item.Collection != nil {
 			for _, report := range item.Collection.GetInputReport() {
 				itemMap[report.ID] = append(itemMap[report.ID], report.Items...)
@@ -106,6 +124,42 @@ func (c Collection) GetInputReport() []Report {
 		})
 	}
 	return reports
+}
+
+func (c Collection) GetInputDataItems() map[uint8][]DataItem {
+	itemMap := make(map[uint8][]DataItem)
+	for _, item := range c.Items {
+		if item.Collection != nil {
+			dataItems := item.Collection.GetInputDataItems()
+			for reportID, items := range dataItems {
+				itemMap[reportID] = append(itemMap[reportID], items...)
+			}
+			continue
+		}
+		if item.Type != MainItemTypeInput {
+			continue
+		}
+		itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
+	}
+	return itemMap
+}
+
+func (c Collection) GetOutputDataItems() map[uint8][]DataItem {
+	itemMap := make(map[uint8][]DataItem)
+	for _, item := range c.Items {
+		if item.Collection != nil {
+			items := item.Collection.GetOutputDataItems()
+			for reportID, dataItems := range items {
+				itemMap[reportID] = append(itemMap[reportID], dataItems...)
+			}
+			continue
+		}
+		if item.Type != MainItemTypeOutput && item.Type != MainItemTypeFeature {
+			continue
+		}
+		itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
+	}
+	return itemMap
 }
 
 func (c Collection) MaxReportSize() int {
@@ -216,7 +270,7 @@ type MainItem struct {
 // Size of 8 bits and a Report Count of 3 has three 8-bit data fields.
 type DataItem struct {
 	Flags        DataFlags
-	UsagePage    uint16    
+	UsagePage    uint16
 	UsageIDs     []uint16
 	UsageMinimum uint16
 	UsageMaximum uint16
@@ -251,4 +305,3 @@ func (u Usage) Page() uint16 {
 func (u Usage) UsageID() uint16 {
 	return uint16(u)
 }
-

@@ -7,79 +7,78 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 )
 
 type Duration time.Duration
 
 func (d Duration) MarshalJSON() ([]byte, error) {
-    return json.Marshal(time.Duration(d).String())
+	return json.Marshal(time.Duration(d).String())
 }
 
 func (d *Duration) UnmarshalJSON(b []byte) error {
-    var v interface{}
-    if err := json.Unmarshal(b, &v); err != nil {
-        return err
-    }
-    switch value := v.(type) {
-    case float64:
-        *d = Duration(time.Duration(value))
-        return nil
-    case string:
-        tmp, err := time.ParseDuration(value)
-        if err != nil {
-            return err
-        }
-        *d = Duration(tmp)
-        return nil
-    default:
-        return errors.New("invalid duration")
-    }
+	var v interface{}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	switch value := v.(type) {
+	case float64:
+		*d = Duration(time.Duration(value))
+		return nil
+	case string:
+		tmp, err := time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+		*d = Duration(tmp)
+		return nil
+	default:
+		return errors.New("invalid duration")
+	}
 }
 
-type ActionTapHold struct {
-	onHold HIDUsageAction
-	onTap  HIDUsageAction
+type ActionTapHold struct{}
+
+func (a ActionTapHold) Metadata() HIDUsageActionMetadata {
+	return HIDUsageActionMetadata{
+		DisplayName: "Tap Hold",
+		Description: "Tap and hold action",
+		Declaration: "tapHold(onTap: Action, onHold: Action, delay: Duration = 250ms, tapDuration: Duration = 10ms)",
+	}
+}
+
+type actionTapHoldHandler struct {
+	onHold HIDUsageActionHandler
+	onTap  HIDUsageActionHandler
 	delay  time.Duration
 }
 
-type tapHoldConfig struct {
-	OnHold json.RawMessage `json:"onHold"`
-	OnTap  json.RawMessage `json:"onTap"`
-	Delay  Duration        `json:"delay"`
-}
-
-func NewTapHoldAction(data json.RawMessage, provider *HIDActionProvider) (HIDUsageAction, error) {
-	var cfg tapHoldConfig
-	err := json.Unmarshal(data, &cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	onHold, err := provider.ActionRegistry.NewFromJSON(cfg.OnHold)
+func (a ActionTapHold) Handler(args actiondsl.Arguments, provider *HIDActionProvider) (HIDUsageActionHandler, error) {
+	onHold, err := provider.ActionRegistry.New(args.Action("onHold"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create onHold action: %w", err)
 	}
 
-	onTap, err := provider.ActionRegistry.NewFromJSON(cfg.OnTap)
+	onTap, err := provider.ActionRegistry.New(args.Action("onTap"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create onTap action: %w", err)
 	}
 
-	return &ActionTapHold{
+	return &actionTapHoldHandler{
 		onHold: onHold,
-		onTap:  newTapAction(onTap, 10*time.Millisecond),
-		delay:  time.Duration(cfg.Delay),
+		onTap:  newTapActionHandler(onTap, args.Duration("tapDuration")),
+		delay:  args.Duration("delay"),
 	}, nil
 }
 
-func (a *ActionTapHold) Usages() []hidparse.Usage {
+func (a *actionTapHoldHandler) Usages() []hidparse.Usage {
 	usages := a.onHold.Usages()
 	usages = append(usages, a.onTap.Usages()...)
 	return usages
 }
 
-func (a *ActionTapHold) Activate(ctx context.Context, activator UsageActivator) func() {
+func (a *actionTapHoldHandler) Activate(ctx context.Context, activator UsageActivator) func() {
 	deactivateCh := make(chan struct{})
 	timer := time.NewTimer(a.delay)
 	go func() {

@@ -170,15 +170,15 @@ func (d *DescriptorDecoder) parseBytes() error {
 	return nil
 }
 
-func (d *reportDescriptorState) descriptor() *ReportDescriptor {
-	return &ReportDescriptor{
+func (d *reportDescriptorState) descriptor() ReportDescriptor {
+	return ReportDescriptor{
 		Collections: d.collections,
 	}
 }
 
-func (d *DescriptorDecoder) Decode() (*ReportDescriptor, error) {
+func (d *DescriptorDecoder) Decode() (ReportDescriptor, error) {
 	if d.err != nil {
-		return nil, d.err
+		return ReportDescriptor{}, d.err
 	}
 	d.initState()
 	for {
@@ -187,7 +187,7 @@ func (d *DescriptorDecoder) Decode() (*ReportDescriptor, error) {
 			d.size = size
 			err := d.parseBytes()
 			if err != nil {
-				return nil, err
+				return ReportDescriptor{}, err
 			}
 		}
 		if size == 0 || errors.Is(err, io.EOF) {
@@ -195,7 +195,7 @@ func (d *DescriptorDecoder) Decode() (*ReportDescriptor, error) {
 		}
 		if err != nil {
 			d.err = fmt.Errorf("failed to read descriptor: %w", err)
-			return nil, d.err
+			return ReportDescriptor{}, d.err
 		}
 	}
 }

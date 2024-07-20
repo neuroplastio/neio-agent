@@ -24,7 +24,15 @@ func (r Report) Clone() Report {
 }
 
 func (r Report) String() string {
-	return fmt.Sprintf("Report{ID: %d, Fields: %v}", r.ID, r.Fields)
+	return fmt.Sprintf("Report{ID: %d, Fields: %s}", r.ID, r.Fields)
+}
+
+func (r Report) FieldsStrings() []string {
+	result := make([]string, len(r.Fields))
+	for i, field := range r.Fields {
+		result[i] = field.String()
+	}
+	return result
 }
 
 func (r Report) Equal(other Report) bool {
@@ -42,23 +50,43 @@ func (r Report) Equal(other Report) bool {
 	return true
 }
 
-func ParseReport(desc hiddesc.ReportDescriptor, data []byte) (Report, bool) {
+func ParseInputReport(desc hiddesc.ReportDescriptor, data []byte) (Report, bool) {
 	reportID := uint8(0)
 	hasReportID := desc.HasReportID()
 	if hasReportID {
 		reportID = data[0]
 		data = data[1:]
 	}
-	rd, ok := desc.GetInputReport(reportID)
-	if !ok {
-		return Report{}, false
-	}
+	items := desc.GetInputDataItems()[reportID]
 	scanner := bits.NewScanner(data)
 	report := Report{
 		ID:     reportID,
-		Fields: make([]bits.Bits, len(rd.Items)),
+		Fields: make([]bits.Bits, len(items)),
 	}
-	for i, id := range rd.Items {
+	for i, id := range items {
+		bits := scanner.Next(int(id.ReportSize) * int(id.ReportCount))
+		if bits.Len() == 0 {
+			return Report{}, false
+		}
+		report.Fields[i] = bits
+	}
+	return report, true
+}
+
+func ParseOutputReport(desc hiddesc.ReportDescriptor, data []byte) (Report, bool) {
+	reportID := uint8(0)
+	hasReportID := desc.HasReportID()
+	if hasReportID {
+		reportID = data[0]
+		data = data[1:]
+	}
+	items := desc.GetOutputDataItems()[reportID]
+	scanner := bits.NewScanner(data)
+	report := Report{
+		ID:     reportID,
+		Fields: make([]bits.Bits, len(items)),
+	}
+	for i, id := range items {
 		bits := scanner.Next(int(id.ReportSize) * int(id.ReportCount))
 		if bits.Len() == 0 {
 			return Report{}, false
@@ -87,7 +115,6 @@ func EncodeReport(report Report) []byte {
 	// TODO: warn when not byte-aligned
 	return allBits.Bytes()
 }
-
 
 func GetAbsoluteFields(desc hiddesc.ReportDescriptor) map[uint8][]int {
 	result := make(map[uint8][]int)

@@ -4,27 +4,46 @@ import (
 	"context"
 	"time"
 
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 )
 
-// ActionTap is not supposed to be used as a standalone action. It is a base action that is used to create more complex actions.
-type ActionTap struct {
-	action   HIDUsageAction
+type ActionTap struct{}
+
+func (a ActionTap) Metadata() HIDUsageActionMetadata {
+	return HIDUsageActionMetadata{
+		DisplayName: "Tap",
+		Description: "Tap action",
+		Declaration: "tap(action: Action, duration: Duration = 15ms)",
+	}
+}
+
+func (a ActionTap) Handler(args actiondsl.Arguments, provider *HIDActionProvider) (HIDUsageActionHandler, error) {
+	action, err := provider.ActionRegistry.New(args.Action("action"))
+	if err != nil {
+		return nil, err
+	}
+	return newTapActionHandler(action, args.Duration("duration")), nil
+}
+
+// actionTapHandler is not supposed to be used as a standalone action. It is a base action that is used to create more complex actions.
+type actionTapHandler struct {
+	action   HIDUsageActionHandler
 	duration time.Duration
 }
 
-func newTapAction(action HIDUsageAction, duration time.Duration) *ActionTap {
-	return &ActionTap{
+func newTapActionHandler(action HIDUsageActionHandler, duration time.Duration) *actionTapHandler {
+	return &actionTapHandler{
 		action:   action,
 		duration: duration,
 	}
 }
 
-func (a *ActionTap) Usages() []hidparse.Usage {
+func (a *actionTapHandler) Usages() []hidparse.Usage {
 	return a.action.Usages()
 }
 
-func (a *ActionTap) Activate(ctx context.Context, activator UsageActivator) func() {
+func (a *actionTapHandler) Activate(ctx context.Context, activator UsageActivator) func() {
 	deactivate := a.action.Activate(ctx, activator)
 	go func() {
 		timer := time.NewTimer(a.duration)

@@ -1,64 +1,12 @@
+
 nodes:
   - id: kb
     input:
       addr: linux/3434:fe0e:0
-  - id: mouse
-    input: 
-      addr: linux/046d:c547:0
-  - id: kbm
-    merge: {}
-  - id: global_remap
-    remap:
-      LeftControl: LeftAlt+LeftControl
-      LeftGui:
-        tapHold:
-          onHold:
-            tapHold:
-              onHold: LeftGui
-              onTap: Tab
-              delay: 500ms
-          onTap: Esc
-          delay: 500ms
-      RightShift:
-        lock: LeftShift
-      F1:
-        set:
-          name: layer
-          value: numbers
+    to: [out]
 
-  - id: layer
-    router: 
-      defaultRoute: output
-  - id: numbers
-    remap:
-      M: "1"
-      Comma: "2"
-      Period: "3"
-      J: "4"
-      K: "5"
-      L: "6"
-      U: "7"
-      I: "8"
-      O: "9"
-  - id: output
+  - id: out
     output:
-      addr:
-        backend: linux
-        id: uhid:neuroplastio
-
-links:
-  - from: kb
-    to: kbm
-  - from: mouse
-    to: kbm
-  - from: kbm
-    to: global_remap
-  - from: global_remap
-    to: layer
-  - from: layer
-    to: output
-  - from: layer
-    to: numbers
-  - from: numbers
-    to: output
-
+      addr: linux/uhid:neuroplastio
+      descriptorFrom:
+        - linux/3434:fe0e:0

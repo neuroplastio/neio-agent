@@ -2,21 +2,31 @@ package flowsvc
 
 import (
 	"context"
-	"encoding/json"
 
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 )
 
-type ActionNone struct {}
+type ActionNone struct{}
 
-func NewActionNone(data json.RawMessage, provider *HIDActionProvider) (HIDUsageAction, error) {
-	return &ActionNone{}, nil
+func (a ActionNone) Metadata() HIDUsageActionMetadata {
+	return HIDUsageActionMetadata{
+		DisplayName: "None",
+		Description: "No action",
+		Declaration: "none()",
+	}
 }
 
-func (a *ActionNone) Usages() []hidparse.Usage {
+func (a ActionNone) Handler(args actiondsl.Arguments, provider *HIDActionProvider) (HIDUsageActionHandler, error) {
+	return &actionNoneHandler{}, nil
+}
+
+type actionNoneHandler struct{}
+
+func (a *actionNoneHandler) Usages() []hidparse.Usage {
 	return []hidparse.Usage{}
 }
 
-func (a *ActionNone) Activate(ctx context.Context, activator UsageActivator) func() {
+func (a *actionNoneHandler) Activate(ctx context.Context, activator UsageActivator) func() {
 	return func() {}
 }

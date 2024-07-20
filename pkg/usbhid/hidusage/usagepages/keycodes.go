@@ -1,6 +1,9 @@
 package usagepages
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func KeyName(code uint8) string {
 	name, ok := keyNameMap[code]
@@ -24,4 +27,14 @@ func KeyCode(name string) uint8 {
 		return 0
 	}
 	return code
+}
+
+func KeyCodesRegexp() string {
+	items := make([]string, 0, len(keyNameMap))
+	for _, name := range keyNameMap {
+		n := strings.TrimPrefix(name, "Key")
+		items = append(items, n)
+	}
+
+	return "(" + strings.Join(items, "|") + ")"
 }

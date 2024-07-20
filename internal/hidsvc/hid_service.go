@@ -687,6 +687,11 @@ type BackendInputDevice struct {
 	ReportDescriptor []byte `json:"reportDescriptor"`
 }
 
+type HIDReportDescriptor struct {
+	Hash uint64
+	Data []byte
+}
+
 type BackendOutputDevice struct {
 	Address string `json:"address"`
 	Name    string `json:"name"`

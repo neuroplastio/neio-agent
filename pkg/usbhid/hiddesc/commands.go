@@ -136,7 +136,7 @@ func cmdCollection(state *reportDescriptorState, payload []byte) error {
 	}
 	if state.collection != nil {
 		state.collection.Items = append(state.collection.Items, MainItem{
-			Type:       MainItemType(state.collection.Type),
+			Type:       MainItemTypeCollection,
 			Collection: &c,
 		})
 		state.collectionStack = append(state.collectionStack, *state.collection)

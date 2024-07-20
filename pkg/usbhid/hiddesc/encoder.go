@@ -6,13 +6,13 @@ import (
 )
 
 type Encoder struct {
-	desc   *ReportDescriptor
+	desc   ReportDescriptor
 	w      io.Writer
 	global *globalState
 	local  *localState
 }
 
-func NewDescriptorEncoder(w io.Writer, desc *ReportDescriptor) *Encoder {
+func NewDescriptorEncoder(w io.Writer, desc ReportDescriptor) *Encoder {
 	return &Encoder{
 		desc:   desc,
 		w:      w,
@@ -61,10 +61,10 @@ func (e *Encoder) encodeMainItem(item MainItem) error {
 		if err := e.encodeUsagePage(item.DataItem.UsagePage); err != nil {
 			return err
 		}
-			if err := e.encodeUsages(item.DataItem.UsageIDs); err != nil {
-				return err
-			}
-		if item.DataItem.UsageMinimum != e.local.usageMinimum || item.DataItem.UsageMaximum != e.local.usageMaximum{
+		if err := e.encodeUsages(item.DataItem.UsageIDs); err != nil {
+			return err
+		}
+		if item.DataItem.UsageMinimum != e.local.usageMinimum || item.DataItem.UsageMaximum != e.local.usageMaximum {
 			if err := e.encodeTag16(TagUsageMinimum, item.DataItem.UsageMinimum); err != nil {
 				return err
 			}
@@ -101,7 +101,7 @@ func (e *Encoder) encodeMainItem(item MainItem) error {
 			e.global.logicalMinimum = item.DataItem.LogicalMinimum
 			e.global.logicalMaximum = item.DataItem.LogicalMaximum
 		}
-		if item.DataItem.PhysicalMinimum != e.global.physicalMinimum || item.DataItem.PhysicalMaximum != e.global.physicalMaximum{
+		if item.DataItem.PhysicalMinimum != e.global.physicalMinimum || item.DataItem.PhysicalMaximum != e.global.physicalMaximum {
 			if err := e.encodeTagi32(TagPhysicalMinimum, item.DataItem.PhysicalMinimum); err != nil {
 				return err
 			}
@@ -222,7 +222,7 @@ func (e *Encoder) encodeTagi32(tag Tag, value int32) error {
 		pad = 0xff
 	}
 	switch {
-	case data[1] == pad && data[2] ==pad  && data[3] == pad:
+	case data[1] == pad && data[2] == pad && data[3] == pad:
 		size = TagItemSize8
 		data = data[:1]
 	case data[2] == pad && data[3] == pad:

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/jochenvg/go-udev"
+	"github.com/citilinkru/libudev"
+	"github.com/citilinkru/libudev/matcher"
 	"github.com/neuroplastio/neuroplastio/internal/configsvc"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
 	"github.com/psanford/uhid"
@@ -37,7 +39,6 @@ type Option func(*backendOptions)
 type Backend struct {
 	log     *zap.Logger
 	options backendOptions
-	udev    udev.Udev
 
 	config   *configsvc.Service
 	uhidPath string
@@ -80,7 +81,6 @@ func NewBackend(log *zap.Logger, configSvc *configsvc.Service, uhidPath string, 
 		log:         log,
 		config:      configSvc,
 		uhidPath:    uhidPath,
-		udev:        udev.Udev{},
 		ready:       make(chan struct{}),
 		hidDevices:  xsync.NewMapOf[HidAddress, hid.DeviceInfo](),
 		uhidDevices: xsync.NewMapOf[string, UhidDeviceConfig](),
@@ -295,43 +295,51 @@ func (b *Backend) OpenInput(id string) (hidsvc.BackendInputDeviceHandle, error) 
 	if err != nil {
 		return nil, err
 	}
-	ud := udev.Udev{}
-	enumerate := ud.NewEnumerate()
-	enumerate.AddMatchSubsystem("input")
-	enumerate.AddMatchProperty("ID_USB_VENDOR_ID", fmt.Sprintf("%04x", dev.VendorID))
-	enumerate.AddMatchProperty("ID_USB_MODEL_ID", fmt.Sprintf("%04x", dev.ProductID))
-	enumerate.AddMatchProperty("ID_USB_INTERFACE_NUM", fmt.Sprintf("%02d", dev.InterfaceNbr))
-	devices, err := enumerate.Devices()
+	// TODO: fork the lib, optimize this lookup (:sadge:). All Go udev libs suck in one way or another
+	scanner := libudev.NewScanner()
+	m := matcher.NewMatcher()
+	m.AddRule(matcher.NewRuleEnv("ID_USB_DRIVER", "hid"))
+	m.AddRule(matcher.NewRuleEnv("ID_USB_VENDOR_ID", fmt.Sprintf("%04x", dev.VendorID)))
+	m.AddRule(matcher.NewRuleEnv("ID_USB_MODEL_ID", fmt.Sprintf("%04x", dev.ProductID)))
+	m.AddRule(matcher.NewRuleEnv("ID_USB_INTERFACE_NUM", fmt.Sprintf("%02d", dev.InterfaceNbr)))
+	err, devices := scanner.ScanDevices()
 	if err != nil {
-		return nil, fmt.Errorf("failed to enumerate devices: %w", err)
+		return nil, fmt.Errorf("failed to scan devices: %w", err)
 	}
-	var udevDev *udev.Device
-	for _, device := range devices {
-		if !strings.HasPrefix(device.Sysname(), "event") {
+	matched := m.Match(devices)
+
+	var syspath string
+	for _, dev := range matched {
+		b.log.Debug("found device", zap.String("syspath", dev.Devpath))
+		if !strings.HasPrefix(filepath.Base(dev.Devpath), "event") {
 			continue
 		}
-		udevDev = device
+		syspath = dev.Devpath
 		break
 	}
-	if udevDev == nil {
-		return nil, fmt.Errorf("device not found in udev")
+	if syspath == "" {
+		return nil, fmt.Errorf("device syspath not found")
 	}
-	err = os.WriteFile(udevDev.Syspath()+"/uevent", []byte("remove"), 0644)
+	b.log.Debug("removing device",
+		zap.String("syspath", syspath),
+		zap.String("id", fmt.Sprintf("%04x:%04x:%d", dev.VendorID, dev.ProductID, dev.InterfaceNbr)),
+	)
+	err = os.WriteFile(syspath+"/uevent", []byte("remove"), 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove device: %w", err)
 	}
 
 	return &hidDeviceHandle{
-		log:  b.log,
-		hid:  hidDev,
-		udev: udevDev,
+		log:     b.log,
+		hid:     hidDev,
+		syspath: syspath,
 	}, nil
 }
 
 type hidDeviceHandle struct {
-	log  *zap.Logger
-	hid  *hid.Device
-	udev *udev.Device
+	log     *zap.Logger
+	hid     *hid.Device
+	syspath string
 }
 
 func (h *hidDeviceHandle) Read(buf []byte) (int, error) {
@@ -349,8 +357,8 @@ func (h *hidDeviceHandle) GetInputReport() ([]byte, error) {
 }
 
 func (h *hidDeviceHandle) Close() error {
-	h.log.Debug("closing device", zap.String("path", h.udev.Syspath()))
-	err := os.WriteFile(h.udev.Syspath()+"/uevent", []byte("add"), 0644)
+	h.log.Debug("closing device", zap.String("path", h.syspath))
+	err := os.WriteFile(h.syspath+"/uevent", []byte("add"), 0644)
 	if err != nil {
 		h.log.Error("failed to re-add device", zap.Error(err))
 	}

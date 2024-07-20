@@ -2,11 +2,11 @@ package flowsvc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 	"github.com/neuroplastio/neuroplastio/pkg/registry"
 	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hidusage/usagepages"
@@ -18,71 +18,97 @@ type HIDActionProvider struct {
 }
 
 type ActionRegistry struct {
-	registry *registry.Registry[HIDUsageAction, *HIDActionProvider]
+	registry *registry.Registry[HIDUsageAction]
+
+	declarations map[string]actiondsl.Declaration
+	actionIDs    map[string]string
 }
 
-func (a *ActionRegistry) NewFromJSON(data json.RawMessage) (HIDUsageAction, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty action config")
-	}
-	if string(data) == "null" || string(data) == `""` {
-		return a.registry.New("none", nil)
-	}
-	if data[0] == '"' {
-		var str string
-		err := json.Unmarshal(data, &str)
-		if err != nil {
-			return nil, err
-		}
-		return a.NewFromString(str)
-	}
-	var actionStringMap map[string]json.RawMessage
-	err := json.Unmarshal(data, &actionStringMap)
+func (a *ActionRegistry) Register(id string, action HIDUsageAction) error {
+	metadata := action.Metadata()
+	decl, err := actiondsl.ParseDeclaration(metadata.Declaration)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal action JSON: %w", err)
+		return fmt.Errorf("failed to parse declaration for action %q: %w", id, err)
 	}
-	if len(actionStringMap) != 1 {
-		return nil, fmt.Errorf("invalid action config: %s", data)
+	if _, ok := a.actionIDs[decl.Action]; ok {
+		return fmt.Errorf("action %q already registered", decl.Action)
 	}
-	for actionType, actionConfig := range actionStringMap {
-		action, err := a.registry.New(actionType, actionConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create action %s: %w", actionType, err)
-		}
-		return action, nil
+	if _, ok := a.declarations[id]; ok {
+		return fmt.Errorf("action %q already registered", id)
 	}
-	return nil, fmt.Errorf("no action type found in %s", data)
+
+	a.declarations[id] = decl
+	a.actionIDs[decl.Action] = id
+	a.registry.Register(id, action)
+	return nil
 }
 
-func (a *ActionRegistry) NewFromString(str string) (HIDUsageAction, error) {
-	usages, err := ParseUsageCombo(str)
+func (a *ActionRegistry) MustRegister(id string, action HIDUsageAction) {
+	err := a.Register(id, action)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	// TODO: support DSL
-	return &UsageAction{
-		usages: usages,
-	}, nil
 }
 
-func NewActionRegistry(state *FlowState) *ActionRegistry {
-	fmt.Println(state)
-	provider := &HIDActionProvider{
-		State: state,
+func (a *ActionRegistry) New(stmt actiondsl.Statement) (HIDUsageActionHandler, error) {
+	if stmt.Action == "" {
+		if len(stmt.Usages) > 0 {
+			usages, err := ParseUsages(stmt.Usages)
+			if err != nil {
+				return nil, err
+			}
+			return newActionUsageHandler(usages), nil
+		} else {
+			return nil, fmt.Errorf("empty action statement")
+		}
 	}
-	reg := registry.NewRegistry[HIDUsageAction, *HIDActionProvider](provider)
-	provider.ActionRegistry = &ActionRegistry{registry: reg}
-	reg.Register("none", NewActionNone)
-	reg.Register("usage", NewUsageAction) // *
-	reg.Register("tapHold", NewTapHoldAction) // tapHold(onTap, onHold[, delay])
-	reg.Register("lock", NewLockAction) // lock(*)
-	reg.Register("set", NewSetAction) // set(name, value)
-	return provider.ActionRegistry
+	id, ok := a.actionIDs[stmt.Action]
+	if !ok {
+		return nil, fmt.Errorf("action %q not found", stmt.Action)
+	}
+	action, err := actiondsl.NewAction(a.declarations[id], stmt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create action %q: %w", stmt.Action, err)
+	}
+	act, err := a.registry.Get(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get action %q: %w", stmt.Action, err)
+	}
+	return act.Handler(action.Args(), &HIDActionProvider{
+		ActionRegistry: a,
+		State:          nil,
+	})
+}
+
+func NewActionRegistry() *ActionRegistry {
+	reg := &ActionRegistry{
+		registry:     registry.NewRegistry[HIDUsageAction](),
+		declarations: make(map[string]actiondsl.Declaration),
+		actionIDs:    make(map[string]string),
+	}
+	reg.MustRegister("none", ActionNone{})
+	reg.MustRegister("tap", ActionTap{})
+	reg.MustRegister("tapHold", ActionTapHold{})
+	reg.MustRegister("lock", ActionLock{})
+	reg.MustRegister("set", ActionSet{})
+	return reg
 }
 
 type UsageActivator func(usages []hidparse.Usage) (unset func())
 
+type HIDUsageActionMetadata struct {
+	DisplayName string
+	Description string
+
+	Declaration string
+}
+
 type HIDUsageAction interface {
+	Metadata() HIDUsageActionMetadata
+	Handler(args actiondsl.Arguments, provider *HIDActionProvider) (HIDUsageActionHandler, error)
+}
+
+type HIDUsageActionHandler interface {
 	// Usages returns all usages that this action emits.
 	Usages() []hidparse.Usage
 	// Activate is called when the action is activated (i.e. key is pressed down).
@@ -90,11 +116,9 @@ type HIDUsageAction interface {
 	Activate(ctx context.Context, activator UsageActivator) func()
 }
 
-
-func ParseUsageCombo(str string) ([]hidparse.Usage, error) {
-	parts := strings.Split(str, "+")
-	usages := make([]hidparse.Usage, 0, len(parts))
-	for _, part := range parts {
+func ParseUsages(str []string) ([]hidparse.Usage, error) {
+	usages := make([]hidparse.Usage, 0, len(str))
+	for _, part := range str {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			return nil, fmt.Errorf("empty usage")

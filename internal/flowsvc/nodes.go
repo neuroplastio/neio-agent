@@ -18,18 +18,12 @@ func NewNodeProvider(hid *hidsvc.Service, log *zap.Logger, actionRegistry *Actio
 		HID:            hid,
 		Log:            log,
 		ActionRegistry: actionRegistry,
-		State: state,
+		State:          state,
 	}
 }
 
-type NodeRegistry = registry.Registry[Node, *NodeProvider]
+type NodeRegistry = registry.Registry[Node]
 
-func NewNodeRegistry(log *zap.Logger, hid *hidsvc.Service, actionRegistry *ActionRegistry, state *FlowState) *NodeRegistry {
-	reg := registry.NewRegistry[Node, *NodeProvider](NewNodeProvider(hid, log, actionRegistry, state))
-	reg.Register("input", NewInputNode)
-	reg.Register("output", NewOutputNode)
-	reg.Register("merge", NewMergeNode)
-	reg.Register("remap", NewRemapNode)
-	reg.Register("router", NewRouterNode)
-	return reg
+func NewNodeRegistry() *NodeRegistry {
+	return registry.NewRegistry[Node]()
 }

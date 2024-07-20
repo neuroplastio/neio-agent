@@ -1,6 +1,8 @@
 package hidparse
 
 import (
+	"fmt"
+
 	"github.com/neuroplastio/neuroplastio/pkg/bits"
 	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hiddesc"
 )
@@ -13,6 +15,10 @@ func (u Usage) Page() uint16 {
 
 func (u Usage) ID() uint16 {
 	return uint16(u)
+}
+
+func (u Usage) String() string {
+	return fmt.Sprintf("0x%02x/0x%02x", u.Page(), u.ID())
 }
 
 func NewUsage(page, id uint16) Usage {
@@ -46,6 +52,10 @@ func (d *DescriptorQueryier) FindByUsagePage(page uint16) []QueryResult {
 }
 
 type UsageSet interface {
+	Usages(bits bits.Bits) []Usage
+	UsagePage() uint16
+	UsageMinimum() uint16
+	UsageMaximum() uint16
 	HasUsage(bits bits.Bits, usage Usage) bool
 	ReplaceUsage(bits bits.Bits, from, to Usage) bool
 	SetUsage(bits bits.Bits, usage Usage) bool
@@ -55,16 +65,39 @@ type UsageSet interface {
 
 type UsageFlags struct {
 	usagePage uint16
-	minimum uint16
-	maximum uint16
+	minimum   uint16
+	maximum   uint16
 }
 
 func NewUsageFlags(usagePage uint16, minimum, maximum uint16) UsageFlags {
 	return UsageFlags{
 		usagePage: usagePage,
-		minimum: minimum,
-		maximum: maximum,
+		minimum:   minimum,
+		maximum:   maximum,
 	}
+}
+
+func (u UsageFlags) UsagePage() uint16 {
+	return u.usagePage
+}
+
+func (u UsageFlags) UsageMinimum() uint16 {
+	return u.minimum
+}
+
+func (u UsageFlags) UsageMaximum() uint16 {
+	return u.maximum
+}
+
+func (u UsageFlags) Usages(bits bits.Bits) []Usage {
+	var usages []Usage
+	bits.Each(func(i int, set bool) bool {
+		if set {
+			usages = append(usages, NewUsage(u.usagePage, uint16(i)+u.minimum))
+		}
+		return true
+	})
+	return usages
 }
 
 func (u UsageFlags) HasUsage(bits bits.Bits, usage Usage) bool {
@@ -107,19 +140,54 @@ func (u UsageFlags) Contains(usage Usage) bool {
 }
 
 type UsageSelector struct {
-	size    int
+	size      int
 	usagePage uint16
-	minimum uint16
-	maximum uint16
+	minimum   uint16
+	maximum   uint16
 }
 
 func NewUsageSelector(size int, usagePage, minimum, maximum uint16) UsageSelector {
 	return UsageSelector{
-		size:    size,
+		size:      size,
 		usagePage: usagePage,
-		minimum: minimum,
-		maximum: maximum,
+		minimum:   minimum,
+		maximum:   maximum,
 	}
+}
+
+func (u UsageSelector) UsagePage() uint16 {
+	return u.usagePage
+}
+
+func (u UsageSelector) UsageMinimum() uint16 {
+	return u.minimum
+}
+
+func (u UsageSelector) UsageMaximum() uint16 {
+	return u.maximum
+}
+
+func (u UsageSelector) Usages(bits bits.Bits) []Usage {
+	var usages []Usage
+	switch u.size {
+	case 8:
+		bits.EachUint8(func(i int, val uint8) bool {
+			if val == 0 {
+				return true
+			}
+			usages = append(usages, NewUsage(u.usagePage, uint16(val)))
+			return true
+		})
+	case 16:
+		bits.EachUint16(func(i int, val uint16) bool {
+			if val == 0 {
+				return true
+			}
+			usages = append(usages, NewUsage(u.usagePage, val))
+			return true
+		})
+	}
+	return usages
 }
 
 func (u UsageSelector) HasUsage(bits bits.Bits, usage Usage) bool {
@@ -220,6 +288,7 @@ func (u UsageSelector) ClearUsage(bits bits.Bits, usage Usage) bool {
 			}
 			if cleared {
 				bits.SetUint8(i-1, val)
+				bits.SetUint8(i, 0)
 				return true
 			}
 			if uint16(val) == usage.ID() {
@@ -236,6 +305,7 @@ func (u UsageSelector) ClearUsage(bits bits.Bits, usage Usage) bool {
 			}
 			if cleared {
 				bits.SetUint16(i-1, val)
+				bits.SetUint16(i, 0)
 				return true
 			}
 			if val == usage.ID() {
@@ -307,4 +377,37 @@ func GetUsageSets(desc hiddesc.ReportDescriptor, filter Filter) map[uint8]map[in
 	}
 
 	return usageSets
+}
+
+func NewUsageSets(dataItems []hiddesc.DataItem) map[int]UsageSet {
+	sets := make(map[int]UsageSet)
+	for i, item := range dataItems {
+		if item.UsageMaximum == 0 || item.Flags.IsConstant() {
+			// not a usage-set data item
+			continue
+		}
+		switch {
+		case item.Flags.IsArray() && (item.ReportSize == 8 || item.ReportSize == 16):
+			sets[i] = NewUsageSelector(int(item.ReportSize), item.UsagePage, item.UsageMinimum, item.UsageMaximum)
+		case item.Flags.IsVariable() && item.ReportSize == 1:
+			sets[i] = NewUsageFlags(item.UsagePage, item.UsageMinimum, item.UsageMaximum)
+		}
+	}
+	return sets
+}
+
+func CompareUsages(usageSet UsageSet, t0, t1 bits.Bits) (activated, deactivated []Usage) {
+	usagesT0 := usageSet.Usages(t0)
+	usagesT1 := usageSet.Usages(t1)
+	for _, usage := range usagesT0 {
+		if !usageSet.HasUsage(t1, usage) {
+			deactivated = append(deactivated, usage)
+		}
+	}
+	for _, usage := range usagesT1 {
+		if !usageSet.HasUsage(t0, usage) {
+			activated = append(activated, usage)
+		}
+	}
+	return
 }
