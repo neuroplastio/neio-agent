@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
-	"github.com/neuroplastio/neuroplastio/actions"
-	"github.com/neuroplastio/neuroplastio/hidnodes"
+	"github.com/neuroplastio/neuroplastio/components/actions"
+	"github.com/neuroplastio/neuroplastio/components/nodes"
 	"github.com/neuroplastio/neuroplastio/internal/configsvc"
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
@@ -50,10 +50,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	hidSvc := hidsvc.New(db, logger, time.Now, hidsvc.WithBackend("linux", linuxHid))
 
 	registry := flowsvc.NewRegistry()
-	hidnodes.Register(registry)
+	nodes.Register(logger, registry)
+	hidSvc.RegisterNodes(registry)
 	actions.Register(registry)
 
-	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, hidSvc, registry)
+	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, registry)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {

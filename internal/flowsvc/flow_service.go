@@ -6,17 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/neuroplastio/neuroplastio/flowapi"
 	"github.com/neuroplastio/neuroplastio/internal/configsvc"
-	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
 	"github.com/neuroplastio/neuroplastio/pkg/bus"
-	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 	"go.uber.org/zap"
 )
 
 type Service struct {
 	config   *configsvc.Service
 	log      *zap.Logger
-	hid      *hidsvc.Service
 	flowPath string
 
 	mu           sync.Mutex
@@ -37,27 +35,29 @@ type (
 		NodeID string
 		Type   FlowEventType
 	}
-	FlowBus        = bus.Bus[FlowEventKey, FlowEvent]
-	FlowPublisher  = bus.Publisher[FlowEvent]
-	FlowSubscriber = bus.Subscriber[FlowEventKey, FlowEvent]
-	FlowStream     struct {
+	FlowBus        = bus.Bus[FlowEventKey, flowapi.Event]
+	FlowPublisher  = bus.Publisher[flowapi.Event]
+	FlowSubscriber = bus.MessageSubscriber[flowapi.Event]
+	flowStream     struct {
 		ctx        context.Context
 		nodeID     string
 		nodeIDs    []string
 		subscriber FlowSubscriber
 		publishers map[string]FlowPublisher
 	}
-	FlowEvent struct {
-		HIDEvent *hidevent.HIDEvent
-	}
 )
 
-func NewFlowStream(ctx context.Context, nodeID string, subscriber FlowSubscriber, publishers map[string]FlowPublisher) FlowStream {
+const (
+	FlowEventDownstream FlowEventType = iota
+	FlowEventUpstream
+)
+
+func newFlowStream(ctx context.Context, nodeID string, subscriber FlowSubscriber, publishers map[string]FlowPublisher) flowStream {
 	nodeIDs := make([]string, 0, len(publishers))
 	for nodeID := range publishers {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
-	return FlowStream{
+	return flowStream{
 		ctx:        ctx,
 		nodeID:     nodeID,
 		nodeIDs:    nodeIDs,
@@ -66,55 +66,41 @@ func NewFlowStream(ctx context.Context, nodeID string, subscriber FlowSubscriber
 	}
 }
 
-func (f FlowStream) Publish(toNodeID string, msg FlowEvent) {
+func (f flowStream) Publish(toNodeID string, msg flowapi.Event) {
+	// TODO: configurable timeout
 	ctx, cancel := context.WithTimeout(f.ctx, 100*time.Microsecond)
+	msg.SourceNodeID = f.nodeID
 	f.publishers[toNodeID](ctx, msg)
 	cancel()
 }
 
-func (f FlowStream) Broadcast(msg FlowEvent) {
+func (f flowStream) Broadcast(msg flowapi.Event) {
 	for _, nodeID := range f.nodeIDs {
 		f.Publish(nodeID, msg)
 	}
 }
 
-func (f FlowStream) NodeIDs() []string {
-	return f.nodeIDs
-}
-
-func (f FlowStream) Subscribe(ctx context.Context) <-chan bus.Message[FlowEventKey, FlowEvent] {
+func (f flowStream) Subscribe(ctx context.Context) <-chan flowapi.Event {
 	return f.subscriber(ctx)
 }
-
-const (
-	FlowEventDownstream FlowEventType = iota
-	FlowEventUpstream
-)
 
 func New(
 	log *zap.Logger,
 	config *configsvc.Service,
 	flowPath string,
-	hidSvc *hidsvc.Service,
 	registry *Registry,
 ) *Service {
 	return &Service{
 		config:   config,
 		log:      log,
 		flowPath: flowPath,
-		hid:      hidSvc,
-		bus:      bus.NewBus[FlowEventKey, FlowEvent](log),
+		bus:      bus.NewBus[FlowEventKey, flowapi.Event](log),
 		registry: registry,
 	}
 }
 
 func (s *Service) Start(ctx context.Context) error {
 	s.ctx = ctx
-	select {
-	case <-ctx.Done():
-		return nil
-	case <-s.hid.Ready():
-	}
 	select {
 	case <-ctx.Done():
 		return nil
@@ -213,7 +199,7 @@ func (s *Service) startGraph(cfg FlowConfig) error {
 }
 
 func (s *Service) buildGraph(cfg FlowConfig) (*Graph, context.Context, context.CancelFunc, error) {
-	b := NewGraphBuilder(s.log, s.registry, s.bus, s.hid)
+	b := NewGraphBuilder(s.log, s.registry, s.bus)
 
 	for _, node := range cfg.Nodes {
 		b = b.AddNode(node.Type, node.ID, node.To)

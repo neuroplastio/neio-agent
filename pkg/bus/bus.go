@@ -23,6 +23,7 @@ type Message[K key, M message] struct {
 
 type Publisher[M message] func(ctx context.Context, msg M)
 type Subscriber[K key, M message] func(ctx context.Context) <-chan Message[K, M]
+type MessageSubscriber[M message] func(ctx context.Context) <-chan M
 
 type Bus[K key, M message] struct {
 	log         *zap.Logger
@@ -117,6 +118,24 @@ func (b *Bus[K, M]) CreatePublisher(key K) Publisher[M] {
 func (b *Bus[K, M]) CreateSubscriber(key ...K) Subscriber[K, M] {
 	return func(ctx context.Context) <-chan Message[K, M] {
 		return b.Subscribe(ctx, key...)
+	}
+}
+
+func (b *Bus[K, M]) CreateMessageSubscriber(key ...K) MessageSubscriber[M] {
+	return func(ctx context.Context) <-chan M {
+		ch := make(chan M)
+		sub := b.Subscribe(ctx, key...)
+		go func() {
+			defer close(ch)
+			for msg := range sub {
+				select {
+				case <-ctx.Done():
+					return
+				case ch <- msg.Message:
+				}
+			}
+		}()
+		return ch
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
+	"github.com/neuroplastio/neuroplastio/flowapi"
 	"github.com/neuroplastio/neuroplastio/pkg/bus"
 	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/zap"
@@ -936,4 +937,15 @@ func (s *Service) IsOutputConnected(addr Address) bool {
 		return true
 	}
 	return false
+}
+
+func (s *Service) RegisterNodes(reg flowapi.Registry) {
+	reg.MustRegisterNodeType("input", InputNodeType{
+		log: s.log,
+		hid: s,
+	})
+	reg.MustRegisterNodeType("output", OutputNodeType{
+		log: s.log,
+		hid: s,
+	})
 }

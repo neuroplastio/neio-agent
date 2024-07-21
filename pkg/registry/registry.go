@@ -26,12 +26,6 @@ func (r *Registry[C]) Register(id string, component C) error {
 	return nil
 }
 
-func (r *Registry[C]) MustRegister(id string, component C) {
-	if err := r.Register(id, component); err != nil {
-		panic(err)
-	}
-}
-
 func (r *Registry[C]) Has(id string) bool {
 	_, ok := r.components[id]
 	return ok

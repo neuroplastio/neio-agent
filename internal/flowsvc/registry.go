@@ -1,16 +1,11 @@
 package flowsvc
 
 import (
-	"context"
 	"fmt"
-	"strconv"
-	"strings"
 
-	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
-	"github.com/neuroplastio/neuroplastio/internal/hidparse"
-	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
+	"github.com/neuroplastio/neuroplastio/flowapi"
+	"github.com/neuroplastio/neuroplastio/flowapi/flowdsl"
 	"github.com/neuroplastio/neuroplastio/pkg/registry"
-	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hidusage/usagepages"
 )
 
 type Registry struct {
@@ -18,9 +13,9 @@ type Registry struct {
 	actions *registry.Registry[actionRegistration]
 }
 
-func (a *Registry) RegisterAction(action Action) error {
+func (a *Registry) RegisterAction(action flowapi.Action) error {
 	metadata := action.Metadata()
-	decl, err := actiondsl.ParseDeclaration(metadata.Signature)
+	decl, err := flowdsl.ParseDeclaration(metadata.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to parse declaration for action %s: %w", metadata.Signature, err)
 	}
@@ -34,26 +29,26 @@ func (a *Registry) RegisterAction(action Action) error {
 	return nil
 }
 
-func (a *Registry) MustRegisterAction(action Action) {
+func (a *Registry) MustRegisterAction(action flowapi.Action) {
 	err := a.RegisterAction(action)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (a *Registry) RegisterNode(typ string, node NodeType) error {
+func (a *Registry) RegisterNodeType(typ string, node flowapi.NodeType) error {
 	if a.nodes.Has(typ) {
 		return fmt.Errorf("node already registered: %s", typ)
 	}
 	registration := nodeRegistration{
 		node:         node,
-		actions:      make(map[string]actiondsl.Declaration),
-		signals:      make(map[string]actiondsl.Declaration),
-		declarations: make(map[string]actiondsl.Declaration),
+		actions:      make(map[string]flowdsl.Declaration),
+		signals:      make(map[string]flowdsl.Declaration),
+		declarations: make(map[string]flowdsl.Declaration),
 	}
 	metadata := node.Descriptor()
 	for _, action := range metadata.Actions {
-		decl, err := actiondsl.ParseDeclaration(action.Signature)
+		decl, err := flowdsl.ParseDeclaration(action.Signature)
 		if err != nil {
 			return fmt.Errorf("failed to parse declaration for action %s: %w", action.Signature, err)
 		}
@@ -64,7 +59,7 @@ func (a *Registry) RegisterNode(typ string, node NodeType) error {
 		registration.declarations[decl.Identifier] = decl
 	}
 	for _, signal := range metadata.Signals {
-		decl, err := actiondsl.ParseDeclaration(signal.Signature)
+		decl, err := flowdsl.ParseDeclaration(signal.Signature)
 		if err != nil {
 			return fmt.Errorf("failed to parse declaration for signal %s: %w", signal.Signature, err)
 		}
@@ -77,14 +72,14 @@ func (a *Registry) RegisterNode(typ string, node NodeType) error {
 	return a.nodes.Register(typ, registration)
 }
 
-func (a *Registry) MustRegisterNode(typ string, node NodeType) {
-	err := a.RegisterNode(typ, node)
+func (a *Registry) MustRegisterNodeType(typ string, node flowapi.NodeType) {
+	err := a.RegisterNodeType(typ, node)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (a *Registry) GetNode(typ string) (NodeType, error) {
+func (a *Registry) GetNode(typ string) (flowapi.NodeType, error) {
 	reg, err := a.nodes.Get(typ)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node %s: %w", typ, err)
@@ -109,93 +104,20 @@ func (a *Registry) getActionRegistration(name string) (actionRegistration, error
 }
 
 type nodeRegistration struct {
-	node         NodeType
-	actions      map[string]actiondsl.Declaration
-	signals      map[string]actiondsl.Declaration
-	declarations map[string]actiondsl.Declaration
+	node         flowapi.NodeType
+	actions      map[string]flowdsl.Declaration
+	signals      map[string]flowdsl.Declaration
+	declarations map[string]flowdsl.Declaration
 }
 
 type actionRegistration struct {
-	action      Action
-	declaration actiondsl.Declaration
+	action      flowapi.Action
+	declaration flowdsl.Declaration
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
 		nodes:   registry.NewRegistry[nodeRegistration](),
 		actions: registry.NewRegistry[actionRegistration](),
-	}
-}
-
-type ActionDescriptor struct {
-	DisplayName string
-	Description string
-
-	Signature string
-}
-
-type SignalDescriptor struct {
-	DisplayName string
-	Description string
-
-	Signature string
-}
-
-type Action interface {
-	Metadata() ActionDescriptor
-	Handler(provider ActionProvider) (ActionHandler, error)
-}
-
-type ActionContext interface {
-	Context() context.Context
-	HIDEvent(modifier func(e *hidevent.HIDEvent))
-}
-
-type ActionFinalizer func(ac ActionContext)
-type ActionHandler func(ac ActionContext) ActionFinalizer
-
-type SignalHandler func(ctx context.Context)
-
-func ParseUsages(str []string) ([]hidparse.Usage, error) {
-	usages := make([]hidparse.Usage, 0, len(str))
-	for _, part := range str {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return nil, fmt.Errorf("empty usage")
-		}
-		usage, err := ParseUsage(part)
-		if err != nil {
-			return nil, err
-		}
-		usages = append(usages, usage)
-	}
-
-	return usages, nil
-}
-
-func ParseUsage(str string) (hidparse.Usage, error) {
-	parts := strings.Split(str, ".")
-	if len(parts) == 1 {
-		parts = []string{"key", parts[0]}
-	}
-	if len(parts) != 2 {
-		return 0, fmt.Errorf("invalid usage: %s", str)
-	}
-	prefix := parts[0]
-	switch prefix {
-	case "key":
-		code := usagepages.KeyCode("Key" + parts[1])
-		if code == 0 {
-			return 0, fmt.Errorf("invalid key code: %s", parts[1])
-		}
-		return hidparse.NewUsage(usagepages.KeyboardKeypad, uint16(code)), nil
-	case "btn":
-		code, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return 0, fmt.Errorf("invalid button code: %s", parts[1])
-		}
-		return hidparse.NewUsage(usagepages.Button, uint16(code)), nil
-	default:
-		return 0, fmt.Errorf("invalid usage prefix: %s", prefix)
 	}
 }
