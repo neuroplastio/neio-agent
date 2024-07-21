@@ -296,6 +296,8 @@ func (b *Backend) OpenInput(id string) (hidsvc.BackendInputDeviceHandle, error) 
 		return nil, err
 	}
 	// TODO: fork the lib, optimize this lookup (:sadge:). All Go udev libs suck in one way or another
+	start := time.Now()
+	b.log.Debug("Scanning udev", zap.String("path", dev.Path))
 	scanner := libudev.NewScanner()
 	m := matcher.NewMatcher()
 	m.AddRule(matcher.NewRuleEnv("ID_USB_DRIVER", "hid"))
@@ -306,6 +308,7 @@ func (b *Backend) OpenInput(id string) (hidsvc.BackendInputDeviceHandle, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan devices: %w", err)
 	}
+	b.log.Debug("Scanned udev", zap.Duration("duration", time.Since(start)))
 	matched := m.Match(devices)
 
 	var syspath string

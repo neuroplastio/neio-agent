@@ -172,8 +172,10 @@ func (r *MuxRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsvc
 				currentRoute = r.defaultRoute
 				routeList = routeList[:0]
 			case muxSet:
-				routeList = append(routeList, s.route)
-				currentRoute = s.route
+				if s.route != currentRoute {
+					routeList = append(routeList, s.route)
+					currentRoute = s.route
+				}
 			case muxUnset:
 				for i, route := range routeList {
 					if route == s.route {

@@ -208,7 +208,7 @@ func (s *Service) consumeEvents(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case event := <-ch:
-				s.manageInputListeners(ctx, event)
+				s.manageInputListeners(event)
 			}
 		}
 	}()
@@ -221,7 +221,7 @@ func (s *Service) consumeEvents(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case event := <-ch:
-				s.manageOutputListeners(ctx, event)
+				s.manageOutputListeners(event)
 			}
 		}
 	}()
@@ -434,7 +434,7 @@ func (s *Service) openInputDevice(ctx context.Context, addr Address) (*openedInp
 	return dev, nil
 }
 
-func (s *Service) manageInputListeners(ctx context.Context, event bus.Message[InputBusKey, bus.EventType]) {
+func (s *Service) manageInputListeners(event bus.Message[InputBusKey, bus.EventType]) {
 	if event.Key.Type != InputReportRead {
 		return
 	}
@@ -451,7 +451,7 @@ func (s *Service) manageInputListeners(ctx context.Context, event bus.Message[In
 	s.checkInputListeners <- event.Key.Addr
 }
 
-func (s *Service) manageOutputListeners(ctx context.Context, event bus.Message[OutputBusKey, bus.EventType]) {
+func (s *Service) manageOutputListeners(event bus.Message[OutputBusKey, bus.EventType]) {
 	if event.Key.Type != OutputReportRead {
 		return
 	}
