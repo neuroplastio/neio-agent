@@ -45,7 +45,7 @@ func ParseDeclaration(decl string) (Declaration, error) {
 				}
 			case "Action", "Signal":
 				if p.Default.Value == nil || !p.Default.Value.IsNull() {
-					return Declaration{}, fmt.Errorf("default parameter for Action and Signal types can only be 'null'", p.Name)
+					return Declaration{}, fmt.Errorf("parameter %s default value can only be 'null'", p.Name)
 				}
 			case "any":
 			default:

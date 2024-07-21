@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/neuroplastio/neuroplastio/actions"
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
@@ -12,15 +13,15 @@ import (
 
 type Mux struct{}
 
-func (f Mux) Metadata() flowsvc.NodeMetadata {
-	return flowsvc.NodeMetadata{
+func (f Mux) Descriptor() flowsvc.NodeTypeDescriptor {
+	return flowsvc.NodeTypeDescriptor{
 		DisplayName: "Mux",
 		Description: `Mux (Multiplexer) routes HID events to one of the downstream nodes based on the current route.
 To switch the route, use the "Switch" action`,
-		UpstreamType:   flowsvc.NodeTypeMany,
-		DownstreamType: flowsvc.NodeTypeMany,
+		UpstreamType:   flowsvc.NodeLinkTypeMany,
+		DownstreamType: flowsvc.NodeLinkTypeMany,
 
-		Actions: []flowsvc.ActionMetadata{
+		Actions: []flowsvc.ActionDescriptor{
 			{
 				DisplayName: "Switch",
 				Description: `When activated switches the route to the specified downstream node, and when deactivated switches it back.
@@ -28,7 +29,7 @@ Equivalent of calling "set" and "unset" signals on activation and deactivation.`
 				Signature: "switch(route: string)",
 			},
 		},
-		Signals: []flowsvc.SignalMetadata{
+		Signals: []flowsvc.SignalDescriptor{
 			{
 				DisplayName: "Reset",
 				Description: "Resets the state of mux to the default route",
@@ -57,7 +58,7 @@ func (r *MuxRunner) actionSwitch(p flowsvc.ActionProvider) (flowsvc.ActionHandle
 	if err != nil {
 		return nil, err
 	}
-	return flowsvc.NewSignalActionHandler(set, unset), nil
+	return actions.NewSignalActionHandler(set, unset), nil
 }
 
 type muxReset struct{}
@@ -106,7 +107,7 @@ type MuxRunner struct {
 	signals         chan any
 }
 
-func (f Mux) Runner(p flowsvc.RunnerProvider) (flowsvc.NodeRunner, error) {
+func (f Mux) CreateNode(p flowsvc.RunnerProvider) (flowsvc.Node, error) {
 	runner := &MuxRunner{
 		id:              p.Info().ID,
 		log:             p.Log(),
@@ -128,7 +129,7 @@ type muxConfig struct {
 	Fallback string `json:"fallback"`
 }
 
-func (r *MuxRunner) Configure(c flowsvc.RunnerConfigurator) error {
+func (r *MuxRunner) Configure(c flowsvc.NodeConfigurator) error {
 	cfg := muxConfig{
 		Fallback: r.defaultRoute,
 	}
@@ -222,7 +223,7 @@ func (r *MuxRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsvc
 			}
 			for route, ev := range deactEvents {
 				down.Publish(route, flowsvc.FlowEvent{
-					HIDEvent: *ev,
+					HIDEvent: ev,
 				})
 			}
 			if !hidEvent.IsEmpty() {

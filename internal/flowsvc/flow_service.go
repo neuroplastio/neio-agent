@@ -9,6 +9,7 @@ import (
 	"github.com/neuroplastio/neuroplastio/internal/configsvc"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
 	"github.com/neuroplastio/neuroplastio/pkg/bus"
+	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 	"go.uber.org/zap"
 )
 
@@ -18,13 +19,14 @@ type Service struct {
 	hid      *hidsvc.Service
 	flowPath string
 
-	mu          sync.Mutex
-	ctx         context.Context
-	graphCtx    context.Context
-	graphCancel context.CancelFunc
-	graph       *GraphV2
-	bus         *FlowBus
-	running     chan struct{}
+	mu           sync.Mutex
+	ctx          context.Context
+	graphCtx     context.Context
+	graphCancel  context.CancelFunc
+	graph        *Graph
+	bus          *FlowBus
+	graphHash    uint64
+	graphRunning chan struct{}
 
 	registry *Registry
 }
@@ -44,6 +46,9 @@ type (
 		nodeIDs    []string
 		subscriber FlowSubscriber
 		publishers map[string]FlowPublisher
+	}
+	FlowEvent struct {
+		HIDEvent *hidevent.HIDEvent
 	}
 )
 
@@ -105,7 +110,6 @@ func New(
 
 func (s *Service) Start(ctx context.Context) error {
 	s.ctx = ctx
-	s.running = make(chan struct{})
 	select {
 	case <-ctx.Done():
 		return nil
@@ -129,12 +133,12 @@ func (s *Service) Start(ctx context.Context) error {
 		return nil
 	case <-s.bus.Ready():
 	}
-
 	err = s.startGraph(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to compile flow: %w", err)
 	}
-	<-s.running
+	<-s.ctx.Done()
+	<-s.graphRunning
 	return nil
 }
 
@@ -143,41 +147,92 @@ func (s *Service) onConfigChange(cfg FlowConfig, err error) {
 		s.log.Error("failed to parse config", zap.Error(err))
 		return
 	}
+	treeHash := cfg.treeHash()
+	if treeHash != s.graphHash {
+		s.log.Info("Configuration updated", zap.Uint64("hash", treeHash), zap.Uint64("old", s.graphHash))
+		err = s.restartGraph(cfg)
+		if err != nil {
+			s.log.Error("invalid graph configuration", zap.Error(err))
+		}
+		return
+	}
+	for _, node := range cfg.Nodes {
+		err = s.graph.Configure(node.ID, node.Config)
+		if err != nil {
+			s.log.Error("failed to configure node", zap.String("node", node.ID), zap.Error(err))
+		}
+	}
+}
+
+func (s *Service) restartGraph(cfg FlowConfig) error {
+	graph, graphCtx, graphCancel, err := s.buildGraph(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to build graph: %w", err)
+	}
+	s.graphCancel()
+	<-s.graphRunning
+	s.graphHash = cfg.treeHash()
+	s.graphRunning = make(chan struct{})
+	s.graph = graph
+	s.graphCtx = graphCtx
+	s.graphCancel = graphCancel
+	go func() {
+		s.graph.Run()
+		s.log.Info("flow stopped")
+		s.graphCancel()
+		s.graph = nil
+		s.graphCtx = nil
+		s.graphCancel = nil
+		close(s.graphRunning)
+	}()
+
+	return nil
 }
 
 func (s *Service) startGraph(cfg FlowConfig) error {
-	b := NewGraphBuilder(s.log, s.registry, s.hid)
+	graph, graphCtx, graphCancel, err := s.buildGraph(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to build graph: %w", err)
+	}
+	s.graphHash = cfg.treeHash()
+	s.graphRunning = make(chan struct{})
+	s.graph = graph
+	s.graphCtx = graphCtx
+	s.graphCancel = graphCancel
+	go func() {
+		s.graph.Run()
+		s.log.Info("flow stopped")
+		s.graphCancel()
+		s.graph = nil
+		s.graphCtx = nil
+		s.graphCancel = nil
+		close(s.graphRunning)
+	}()
+
+	return nil
+}
+
+func (s *Service) buildGraph(cfg FlowConfig) (*Graph, context.Context, context.CancelFunc, error) {
+	b := NewGraphBuilder(s.log, s.registry, s.bus, s.hid)
 
 	for _, node := range cfg.Nodes {
 		b = b.AddNode(node.Type, node.ID, node.To)
 	}
 	if err := b.Validate(); err != nil {
-		return fmt.Errorf("failed to validate graph: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to validate graph: %w", err)
 	}
-	graph, err := b.Build()
+	graphCtx, graphCancel := context.WithCancel(s.ctx)
+	graph, err := b.Build(graphCtx)
 	if err != nil {
-		return fmt.Errorf("failed to build graph: %w", err)
+		graphCancel()
+		return nil, nil, nil, fmt.Errorf("failed to build graph: %w", err)
 	}
 	for _, node := range cfg.Nodes {
 		err := graph.Configure(node.ID, node.Config)
 		if err != nil {
-			return fmt.Errorf("failed to configure node %s: %w", node.ID, err)
+			graphCancel()
+			return nil, nil, nil, fmt.Errorf("failed to configure node %s: %w", node.ID, err)
 		}
 	}
-	s.graphCtx, s.graphCancel = context.WithCancel(s.ctx)
-	s.graph = graph
-	go func() {
-		<-s.graphCtx.Done()
-		s.log.Info("flow cancelled")
-		close(s.running)
-	}()
-	go func() {
-		err := s.graph.Run(s.graphCtx, s.bus)
-		if err != nil {
-			s.log.Error("flow failed", zap.Error(err))
-		}
-		s.log.Error("flow stopped")
-	}()
-
-	return nil
+	return graph, graphCtx, graphCancel, nil
 }

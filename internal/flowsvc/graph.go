@@ -7,37 +7,70 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
-	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hiddesc"
 	"go.uber.org/zap"
 )
 
-type NodeType int
+type NodeLinkType int
 
 const (
-	NodeTypeNone NodeType = iota
-	NodeTypeOne
-	NodeTypeMany
+	NodeLinkTypeNone NodeLinkType = iota
+	NodeLinkTypeOne
+	NodeLinkTypeMany
 )
 
-type NodeMetadata struct {
+type NodeTypeDescriptor struct {
 	DisplayName string
 	Description string
 
-	UpstreamType   NodeType
-	DownstreamType NodeType
+	UpstreamType   NodeLinkType
+	DownstreamType NodeLinkType
 
-	Actions []ActionMetadata
-	Signals []SignalMetadata
+	Actions []ActionDescriptor
+	Signals []SignalDescriptor
 }
 
-type NodeInfo struct {
+type NodeGraphInfo struct {
 	ID          string
-	Type        string
-	Metadata    NodeMetadata
+	Descriptor  NodeTypeDescriptor
 	Upstreams   []string
 	Downstreams []string
 }
+
+type NodeType interface {
+	Descriptor() NodeTypeDescriptor
+	CreateNode(p RunnerProvider) (Node, error)
+}
+
+type RunnerProvider interface {
+	Log() *zap.Logger
+	Info() NodeGraphInfo
+	RegisterAction(name string, creator ActionCreator)
+	RegisterSignal(name string, creator SignalCreator)
+}
+
+type NodeConfigurator interface {
+	Unmarshal(to any) error
+
+	ActionHandler(stmt actiondsl.Statement) (ActionHandler, error)
+	SignalHandler(stmt actiondsl.Statement) (SignalHandler, error)
+
+	HID() *hidsvc.Service
+}
+
+type Node interface {
+	Configure(c NodeConfigurator) error
+	Run(ctx context.Context, up FlowStream, down FlowStream) error
+}
+
+type ActionProvider interface {
+	Args() actiondsl.Arguments
+	ActionArg(argName string) (ActionHandler, error)
+	SignalArg(argName string) (SignalHandler, error)
+}
+
+type ActionCreator func(p ActionProvider) (ActionHandler, error)
+type SignalCreator func(p ActionProvider) (SignalHandler, error)
 
 type HIDReportDescriptor struct {
 	id     uint64
@@ -82,43 +115,4 @@ func NewHIDReportDescriptor(desc hiddesc.ReportDescriptor) (HIDReportDescriptor,
 		raw:    buffer.Bytes(),
 		parsed: desc,
 	}, nil
-}
-
-type Node interface {
-	Metadata() NodeMetadata
-	Runner(p RunnerProvider) (NodeRunner, error)
-}
-
-type RunnerProvider interface {
-	Log() *zap.Logger
-	Info() NodeInfo
-	RegisterAction(id string, creator ActionCreator)
-	RegisterSignal(id string, creator SignalCreator)
-}
-
-type RunnerConfigurator interface {
-	Unmarshal(to any) error
-
-	HID() *hidsvc.Service
-
-	ActionHandler(stmt actiondsl.Statement) (ActionHandler, error)
-	SignalHandler(stmt actiondsl.Statement) (SignalHandler, error)
-}
-
-type NodeRunner interface {
-	Configure(c RunnerConfigurator) error
-	Run(ctx context.Context, up FlowStream, down FlowStream) error
-}
-
-type ActionProvider interface {
-	Args() actiondsl.Arguments
-	ActionArg(argName string) (ActionHandler, error)
-	SignalArg(argName string) (SignalHandler, error)
-}
-
-type ActionCreator func(p ActionProvider) (ActionHandler, error)
-type SignalCreator func(p ActionProvider) (SignalHandler, error)
-
-type FlowEvent struct {
-	HIDEvent hidevent.HIDEvent
 }

@@ -15,7 +15,6 @@ nodes:
       F3: lock($layer.switch("symbols"))
       F5: signal($layer.reset())
       F6: signal(null, $layer.reset())
-
     to: [layer]
 
   - id: layer
@@ -23,9 +22,11 @@ nodes:
       fallback: out
     to: [symbols, out]
 
+    
   - id: symbols
     bind: {}
     to: [out]
+
 
 
   - id: out

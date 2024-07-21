@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
+	"github.com/neuroplastio/neuroplastio/actions"
 	"github.com/neuroplastio/neuroplastio/hidnodes"
 	"github.com/neuroplastio/neuroplastio/internal/configsvc"
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
@@ -50,6 +51,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	registry := flowsvc.NewRegistry()
 	hidnodes.Register(registry)
+	actions.Register(registry)
 
 	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, hidSvc, registry)
 

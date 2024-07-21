@@ -41,7 +41,7 @@ func (a *Registry) MustRegisterAction(action Action) {
 	}
 }
 
-func (a *Registry) RegisterNode(typ string, node Node) error {
+func (a *Registry) RegisterNode(typ string, node NodeType) error {
 	if a.nodes.Has(typ) {
 		return fmt.Errorf("node already registered: %s", typ)
 	}
@@ -51,7 +51,7 @@ func (a *Registry) RegisterNode(typ string, node Node) error {
 		signals:      make(map[string]actiondsl.Declaration),
 		declarations: make(map[string]actiondsl.Declaration),
 	}
-	metadata := node.Metadata()
+	metadata := node.Descriptor()
 	for _, action := range metadata.Actions {
 		decl, err := actiondsl.ParseDeclaration(action.Signature)
 		if err != nil {
@@ -77,14 +77,14 @@ func (a *Registry) RegisterNode(typ string, node Node) error {
 	return a.nodes.Register(typ, registration)
 }
 
-func (a *Registry) MustRegisterNode(typ string, node Node) {
+func (a *Registry) MustRegisterNode(typ string, node NodeType) {
 	err := a.RegisterNode(typ, node)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (a *Registry) GetNode(typ string) (Node, error) {
+func (a *Registry) GetNode(typ string) (NodeType, error) {
 	reg, err := a.nodes.Get(typ)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node %s: %w", typ, err)
@@ -109,7 +109,7 @@ func (a *Registry) getActionRegistration(name string) (actionRegistration, error
 }
 
 type nodeRegistration struct {
-	node         Node
+	node         NodeType
 	actions      map[string]actiondsl.Declaration
 	signals      map[string]actiondsl.Declaration
 	declarations map[string]actiondsl.Declaration
@@ -121,26 +121,20 @@ type actionRegistration struct {
 }
 
 func NewRegistry() *Registry {
-	reg := &Registry{
+	return &Registry{
 		nodes:   registry.NewRegistry[nodeRegistration](),
 		actions: registry.NewRegistry[actionRegistration](),
 	}
-	reg.MustRegisterAction(ActionNone{})
-	reg.MustRegisterAction(ActionTap{})
-	reg.MustRegisterAction(ActionTapHold{})
-	reg.MustRegisterAction(ActionLock{})
-	reg.MustRegisterAction(ActionSignal{})
-	return reg
 }
 
-type ActionMetadata struct {
+type ActionDescriptor struct {
 	DisplayName string
 	Description string
 
 	Signature string
 }
 
-type SignalMetadata struct {
+type SignalDescriptor struct {
 	DisplayName string
 	Description string
 
@@ -148,7 +142,7 @@ type SignalMetadata struct {
 }
 
 type Action interface {
-	Metadata() ActionMetadata
+	Metadata() ActionDescriptor
 	Handler(provider ActionProvider) (ActionHandler, error)
 }
 

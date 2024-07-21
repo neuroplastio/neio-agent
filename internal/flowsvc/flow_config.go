@@ -3,11 +3,24 @@ package flowsvc
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/cespare/xxhash"
 )
 
 type FlowConfig struct {
 	// Nodes is a list of node configurations.
 	Nodes []NodeConfig `json:"nodes"`
+}
+
+func (f FlowConfig) treeHash() uint64 {
+	var tokens []string
+	for _, node := range f.Nodes {
+		tokens = append(tokens, node.ID)
+		tokens = append(tokens, node.Type)
+		tokens = append(tokens, node.To...)
+	}
+	return xxhash.Sum64String(strings.Join(tokens, "|"))
 }
 
 type NodeConfig struct {

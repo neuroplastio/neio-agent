@@ -1,53 +1,60 @@
 package flowsvc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
+	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
+	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 	"go.uber.org/zap"
 )
 
 type GraphBuilder struct {
 	log      *zap.Logger
-	registry *Registry
+	registry *GraphRegistry
 	hid      *hidsvc.Service
+	bus      *FlowBus
 
-	nodes     map[string]Node
-	nodeTypes map[string]string
-	nodeOrder []string
+	nodeIDs []string
 
 	edgesDown map[string][]string
 	edgesUp   map[string][]string
 
+	up   map[string]FlowStream
+	down map[string]FlowStream
+
 	errors []error
 }
 
-func NewGraphBuilder(log *zap.Logger, registry *Registry, hid *hidsvc.Service) GraphBuilder {
+func NewGraphBuilder(log *zap.Logger, reg *Registry, bus *FlowBus, hid *hidsvc.Service) GraphBuilder {
+	registry := &GraphRegistry{
+		registry:     reg,
+		nodeTypes:    make(map[string]string),
+		signals:      make(map[string]map[string]SignalCreator),
+		actions:      make(map[string]map[string]ActionCreator),
+		declarations: make(map[string]map[string]actiondsl.Declaration),
+	}
 	return GraphBuilder{
 		log:      log,
 		registry: registry,
 		hid:      hid,
+		bus:      bus,
 
-		nodes:     make(map[string]Node),
-		nodeTypes: make(map[string]string),
 		edgesDown: make(map[string][]string),
 		edgesUp:   make(map[string][]string),
+		up:        make(map[string]FlowStream),
+		down:      make(map[string]FlowStream),
 	}
 }
 
 func (g GraphBuilder) AddNode(typ string, id string, to []string) GraphBuilder {
-	node, err := g.registry.GetNode(typ)
-	if err != nil {
-		g.errors = append(g.errors, fmt.Errorf("failed to create node %s: %w", id, err))
-		return g
-	}
-	g.nodeOrder = append(g.nodeOrder, id)
-	g.nodes[id] = node
-	g.nodeTypes[id] = typ
+	g.nodeIDs = append(g.nodeIDs, id)
+	g.registry.nodeTypes[id] = typ
 	for _, toID := range to {
 		g.edgesDown[id] = append(g.edgesDown[id], toID)
 		g.edgesUp[toID] = append(g.edgesUp[toID], id)
@@ -56,8 +63,8 @@ func (g GraphBuilder) AddNode(typ string, id string, to []string) GraphBuilder {
 }
 
 func (g GraphBuilder) entryNodeIDs() []string {
-	ids := make([]string, 0, len(g.nodes))
-	for _, id := range g.nodeOrder {
+	ids := make([]string, 0, len(g.nodeIDs))
+	for _, id := range g.nodeIDs {
 		if len(g.edgesUp[id]) == 0 {
 			ids = append(ids, id)
 		}
@@ -69,44 +76,47 @@ func (g GraphBuilder) Validate() error {
 	if len(g.errors) > 0 {
 		return fmt.Errorf("errors: %v", g.errors)
 	}
-	if len(g.nodes) == 0 {
+	if len(g.nodeIDs) == 0 {
 		return fmt.Errorf("no nodes")
 	}
 
-	for _, id := range g.nodeOrder {
-		node := g.nodes[id]
-		meta := node.Metadata()
+	for _, id := range g.nodeIDs {
+		node, err := g.registry.NewNode(id)
+		if err != nil {
+			return fmt.Errorf("failed to get node %s: %w", id, err)
+		}
+		meta := node.Descriptor()
 		switch meta.UpstreamType {
-		case NodeTypeMany:
+		case NodeLinkTypeMany:
 			if len(g.edgesUp[id]) == 0 {
 				fmt.Println(g.edgesDown[id])
 				return fmt.Errorf("node %s has no upstream nodes", id)
 			}
-		case NodeTypeOne:
+		case NodeLinkTypeOne:
 			if len(g.edgesUp[id]) == 0 {
 				return fmt.Errorf("node %s has no upstream nodes", id)
 			}
 			if len(g.edgesUp[id]) > 1 {
 				return fmt.Errorf("node %s shold only have one upstream node", id)
 			}
-		case NodeTypeNone:
+		case NodeLinkTypeNone:
 			if len(g.edgesUp[id]) > 0 {
 				return fmt.Errorf("node %s should not have upstream nodes", id)
 			}
 		}
 		switch meta.DownstreamType {
-		case NodeTypeMany:
+		case NodeLinkTypeMany:
 			if len(g.edgesDown[id]) == 0 {
 				return fmt.Errorf("node %s has no downstream nodes", id)
 			}
-		case NodeTypeOne:
+		case NodeLinkTypeOne:
 			if len(g.edgesDown[id]) == 0 {
 				return fmt.Errorf("node %s has no downstream nodes", id)
 			}
 			if len(g.edgesDown[id]) > 1 {
 				return fmt.Errorf("node %s should only have one downstream node", id)
 			}
-		case NodeTypeNone:
+		case NodeLinkTypeNone:
 			if len(g.edgesDown[id]) > 0 {
 				return fmt.Errorf("node %s should not have downstream nodes", id)
 			}
@@ -141,71 +151,78 @@ func (g GraphBuilder) validateCycles(id string, visited map[string]struct{}) err
 	return nil
 }
 
-func (g GraphBuilder) Build() (*GraphV2, error) {
-	registry := &GraphRegistry{
-		registry:     g.registry,
-		nodeTypes:    g.nodeTypes,
-		signals:      make(map[string]map[string]SignalCreator),
-		actions:      make(map[string]map[string]ActionCreator),
-		declarations: make(map[string]map[string]actiondsl.Declaration),
+func (g GraphBuilder) Build(ctx context.Context) (*Graph, error) {
+	up := make(map[string]FlowStream, len(g.nodeIDs))
+	down := make(map[string]FlowStream, len(g.nodeIDs))
+	for _, id := range g.nodeIDs {
+		up[id] = g.createStream(ctx, id, g.edgesUp[id], true)
+		down[id] = g.createStream(ctx, id, g.edgesDown[id], false)
 	}
-	runners := make(map[string]NodeRunner, len(g.nodes))
-	for _, id := range g.nodeOrder {
-		node := g.nodes[id]
-		info := NodeInfo{
-			ID:          id,
-			Type:        g.nodeTypes[id],
-			Metadata:    node.Metadata(),
-			Downstreams: g.edgesDown[id],
-			Upstreams:   g.edgesUp[id],
-		}
-		provider := &runnerProvider{
-			log:      g.log,
-			node:     info,
-			registry: registry,
-		}
-		runner, err := node.Runner(provider)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create runner for node %s: %w", id, err)
-		}
-		runners[id] = runner
+	graph := &Graph{
+		log:      g.log,
+		registry: g.registry,
+		hid:      g.hid,
+		baseCtx:  ctx,
+		nodeIDs:  g.nodeIDs,
+		makeNode: g.createNode,
+		up:       up,
+		down:     down,
+		configs:  make(map[string]json.RawMessage),
 	}
-	return &GraphV2{
-		log:       g.log,
-		registry:  registry,
-		hid:       g.hid,
-		runners:   runners,
-		edgesUp:   g.edgesUp,
-		edgesDown: g.edgesDown,
-		states:    make(map[string]*runnerState),
-	}, nil
+	err := graph.initRunners()
+	if err != nil {
+		return nil, fmt.Errorf("failed to init runners: %w", err)
+	}
+	return graph, nil
 }
 
-type runnerProvider struct {
-	log      *zap.Logger
-	node     NodeInfo
-	registry *GraphRegistry
+func (g GraphBuilder) createNode(id string) (Node, error) {
+	nodeType, err := g.registry.NewNode(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node type %s: %w", id, err)
+	}
+	provider := &nodeProvider{
+		log: g.log,
+		graphInfo: NodeGraphInfo{
+			ID:          id,
+			Descriptor:  nodeType.Descriptor(),
+			Downstreams: g.edgesDown[id],
+			Upstreams:   g.edgesUp[id],
+		},
+		registry: g.registry,
+	}
+	node, err := nodeType.CreateNode(provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create node %s: %w", id, err)
+	}
+	return node, nil
+}
+
+type nodeProvider struct {
+	log       *zap.Logger
+	graphInfo NodeGraphInfo
+	registry  *GraphRegistry
 
 	errors []error
 }
 
-func (r *runnerProvider) Log() *zap.Logger {
+func (r *nodeProvider) Log() *zap.Logger {
 	return r.log
 }
 
-func (r *runnerProvider) Info() NodeInfo {
-	return r.node
+func (r *nodeProvider) Info() NodeGraphInfo {
+	return r.graphInfo
 }
 
-func (r *runnerProvider) RegisterAction(name string, creator ActionCreator) {
-	err := r.registry.RegisterAction(r.node.ID, name, creator)
+func (r *nodeProvider) RegisterAction(name string, creator ActionCreator) {
+	err := r.registry.RegisterAction(r.graphInfo.ID, name, creator)
 	if err != nil {
 		r.errors = append(r.errors, err)
 	}
 }
 
-func (r *runnerProvider) RegisterSignal(name string, creator SignalCreator) {
-	err := r.registry.RegisterSignal(r.node.ID, name, creator)
+func (r *nodeProvider) RegisterSignal(name string, creator SignalCreator) {
+	err := r.registry.RegisterSignal(r.graphInfo.ID, name, creator)
 	if err != nil {
 		r.errors = append(r.errors, err)
 	}
@@ -219,6 +236,10 @@ type GraphRegistry struct {
 	declarations map[string]map[string]actiondsl.Declaration
 	actions      map[string]map[string]ActionCreator
 	signals      map[string]map[string]SignalCreator
+}
+
+func (r *GraphRegistry) NewNode(id string) (NodeType, error) {
+	return r.registry.GetNode(r.nodeTypes[id])
 }
 
 func (r *GraphRegistry) RegisterAction(nodeID string, name string, creator ActionCreator) error {
@@ -275,61 +296,84 @@ func (r *GraphRegistry) RegisterSignal(nodeID string, name string, creator Signa
 	return nil
 }
 
-type GraphV2 struct {
-	log         *zap.Logger
-	registry    *GraphRegistry
-	hid         *hidsvc.Service
-	runners     map[string]NodeRunner
-	baseContext context.Context
-	edgesUp     map[string][]string
-	edgesDown   map[string][]string
+type Graph struct {
+	log      *zap.Logger
+	registry *GraphRegistry
+	hid      *hidsvc.Service
 
-	states map[string]*runnerState
+	baseCtx  context.Context
+	makeNode func(id string) (Node, error)
+	nodeIDs  []string
+	up       map[string]FlowStream
+	down     map[string]FlowStream
+
+	configs map[string]json.RawMessage
+	runners map[string]*nodeRunner
 }
 
-type runnerConfigurator struct {
+type nodeConfigurator struct {
+	ctx      context.Context
 	config   json.RawMessage
 	registry *GraphRegistry
 	hid      *hidsvc.Service
 }
 
-func (r runnerConfigurator) Unmarshal(to any) error {
+func (r nodeConfigurator) Unmarshal(to any) error {
 	return json.Unmarshal(r.config, to)
 }
 
-func (r runnerConfigurator) Registry() *GraphRegistry {
+func (r nodeConfigurator) Registry() *GraphRegistry {
 	return r.registry
 }
 
-func (r runnerConfigurator) HID() *hidsvc.Service {
+func (r nodeConfigurator) HID() *hidsvc.Service {
 	return r.hid
 }
 
-func (r runnerConfigurator) ActionHandler(stmt actiondsl.Statement) (ActionHandler, error) {
+func (r nodeConfigurator) ActionHandler(stmt actiondsl.Statement) (ActionHandler, error) {
 	return r.registry.ActionHandler(stmt)
 }
 
-func (r runnerConfigurator) SignalHandler(stmt actiondsl.Statement) (SignalHandler, error) {
+func (r nodeConfigurator) SignalHandler(stmt actiondsl.Statement) (SignalHandler, error) {
 	return r.registry.SignalHandler(stmt)
 }
 
-func (g *GraphV2) Configure(nodeID string, config json.RawMessage) error {
+func (g *Graph) Configure(nodeID string, config json.RawMessage) error {
 	runner, ok := g.runners[nodeID]
 	if !ok {
 		return fmt.Errorf("node %s not found", nodeID)
 	}
-	configurator := &runnerConfigurator{
+	configurator := &nodeConfigurator{
+		ctx:      g.baseCtx,
 		config:   config,
 		registry: g.registry,
 		hid:      g.hid,
 	}
-	return runner.Configure(configurator)
+	oldConfig, ok := g.configs[nodeID]
+	if ok {
+		if bytes.Equal(oldConfig, config) {
+			return nil
+		}
+		g.configs[nodeID] = config
+		newNode, err := g.makeNode(nodeID)
+		if err != nil {
+			return fmt.Errorf("failed to create node %s: %w", nodeID, err)
+		}
+		err = newNode.Configure(configurator)
+		if err != nil {
+			return fmt.Errorf("failed to configure node %s: %w", nodeID, err)
+		}
+		g.log.Debug("Replacing node", zap.String("node", nodeID))
+		runner.replaceNode(newNode)
+		return nil
+	}
+	g.configs[nodeID] = config
+	return runner.node.Configure(configurator)
 }
 
-func (g *GraphV2) createStream(bus *FlowBus, nodeID string, nodes []string, reverse bool) FlowStream {
+func (g *GraphBuilder) createStream(ctx context.Context, nodeID string, nodes []string, reverse bool) FlowStream {
 	if len(nodes) == 0 {
-		g.log.Debug("Created empty stream", zap.Any("node", nodeID))
-		return NewFlowStream(g.baseContext, nodeID, nil, nil)
+		return NewFlowStream(ctx, nodeID, nil, nil)
 	}
 	t1 := FlowEventUpstream
 	t2 := FlowEventDownstream
@@ -349,53 +393,47 @@ func (g *GraphV2) createStream(bus *FlowBus, nodeID string, nodes []string, reve
 			Type:   t2,
 		})
 	}
-	sub := bus.CreateSubscriber(subKeys...)
+	sub := g.bus.CreateSubscriber(subKeys...)
 	pub := make(map[string]FlowPublisher, len(pubKeys))
 	for _, key := range pubKeys {
-		pub[key.NodeID] = bus.CreatePublisher(key)
+		pub[key.NodeID] = g.bus.CreatePublisher(key)
 	}
-	g.log.Debug("Created stream", zap.Any("node", nodeID), zap.Any("sub", subKeys), zap.Any("pub", pubKeys))
-	return NewFlowStream(g.baseContext, nodeID, sub, pub)
+	return NewFlowStream(ctx, nodeID, sub, pub)
 }
 
-func (g *GraphV2) Run(ctx context.Context, bus *FlowBus) error {
-	g.baseContext = ctx
-	for id := range g.runners {
-		g.startRunner(id, bus)
+func (g *Graph) initRunners() error {
+	g.runners = make(map[string]*nodeRunner, len(g.nodeIDs))
+	for _, id := range g.nodeIDs {
+		node, err := g.makeNode(id)
+		if err != nil {
+			return fmt.Errorf("failed to create node %s: %w", id, err)
+		}
+		runner := newNodeRunner(g.baseCtx, g.log, node, g.up[id], g.down[id])
+		g.runners[id] = runner
 	}
-	// TODO: node error handling
-	<-ctx.Done()
 	return nil
 }
 
-type runnerState struct {
-	upstream   FlowStream
-	downstream FlowStream
-
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
+func (g *Graph) Run() {
+	for _, id := range g.nodeIDs {
+		g.runners[id].start()
+	}
+	for _, g := range g.runners {
+		<-g.running
+	}
 }
 
-func (g *GraphV2) startRunner(id string, bus *FlowBus) {
-	ctx, cancel := context.WithCancel(g.baseContext)
-	state := &runnerState{
-		ctx:        ctx,
-		cancel:     cancel,
-		upstream:   g.createStream(bus, id, g.edgesUp[id], true),
-		downstream: g.createStream(bus, id, g.edgesDown[id], false),
-		done:       make(chan struct{}),
-	}
-	g.states[id] = state
-	go func() {
-		defer close(state.done)
-		g.log.Info("Starting runner", zap.String("node", id))
-		err := g.runners[id].Run(state.ctx, state.upstream, state.downstream)
-		if err != nil {
-			// TODO: node failure handling
-			g.log.Error("Runner failed", zap.Error(err))
+func NewActionUsageHandler(usages []hidparse.Usage) ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		ac.HIDEvent(func(e *hidevent.HIDEvent) {
+			e.Activate(usages...)
+		})
+		return func(ac ActionContext) {
+			ac.HIDEvent(func(e *hidevent.HIDEvent) {
+				e.Deactivate(usages...)
+			})
 		}
-	}()
+	}
 }
 
 func (g *GraphRegistry) NewUsageActionHandler(stmt actiondsl.UsageStatement) (ActionHandler, error) {
@@ -521,4 +559,57 @@ func (a *actionProvider) SignalArg(argName string) (SignalHandler, error) {
 		return nil, nil
 	}
 	return a.registry.SignalHandler(*stmt)
+}
+
+type nodeRunner struct {
+	log *zap.Logger
+
+	node       Node
+	upstream   FlowStream
+	downstream FlowStream
+
+	baseCtx context.Context
+
+	ctx     context.Context
+	cancel  context.CancelFunc
+	running chan struct{}
+}
+
+func newNodeRunner(ctx context.Context, log *zap.Logger, node Node, up FlowStream, down FlowStream) *nodeRunner {
+	return &nodeRunner{
+		log:        log,
+		node:       node,
+		baseCtx:    ctx,
+		upstream:   up,
+		downstream: down,
+	}
+}
+
+func (n *nodeRunner) start() {
+	n.ctx, n.cancel = context.WithCancel(n.baseCtx)
+	n.running = make(chan struct{})
+	go func() {
+		defer func() {
+			n.cancel()
+			close(n.running)
+			if r := recover(); r != nil {
+				n.log.Error("Node panic", zap.Any("panic", r))
+			}
+		}()
+		n.log.Debug("Starting node")
+		err := n.node.Run(n.ctx, n.upstream, n.downstream)
+		if err != nil {
+			n.log.Error("Node failed", zap.Error(err))
+		}
+	}()
+}
+
+func (n *nodeRunner) replaceNode(node Node) {
+	n.log.Debug("Replacing node")
+	n.cancel()
+	<-n.running
+	n.node = node
+	n.ctx, n.cancel = context.WithCancel(n.baseCtx)
+	n.running = make(chan struct{})
+	n.start()
 }

@@ -1,21 +1,23 @@
-package flowsvc
+package actions
 
 import (
 	"fmt"
 	"time"
+
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
 )
 
 type ActionTapHold struct{}
 
-func (a ActionTapHold) Metadata() ActionMetadata {
-	return ActionMetadata{
+func (a ActionTapHold) Metadata() flowsvc.ActionDescriptor {
+	return flowsvc.ActionDescriptor{
 		DisplayName: "Tap Hold",
 		Description: "Tap and hold action",
 		Signature:   "tapHold(onTap: Action, onHold: Action, delay: Duration = 250ms, tapDuration: Duration = 10ms)",
 	}
 }
 
-func (a ActionTapHold) Handler(p ActionProvider) (ActionHandler, error) {
+func (a ActionTapHold) Handler(p flowsvc.ActionProvider) (flowsvc.ActionHandler, error) {
 	onHold, err := p.ActionArg("onHold")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create onHold action: %w", err)
@@ -29,8 +31,8 @@ func (a ActionTapHold) Handler(p ActionProvider) (ActionHandler, error) {
 	return NewActionTapHoldHandler(onTap, onHold, p.Args().Duration("delay"), p.Args().Duration("tapDuration")), nil
 }
 
-func NewActionTapHoldHandler(onTap ActionHandler, onHold ActionHandler, delay time.Duration, tapDuration time.Duration) ActionHandler {
-	return func(ac ActionContext) ActionFinalizer {
+func NewActionTapHoldHandler(onTap flowsvc.ActionHandler, onHold flowsvc.ActionHandler, delay time.Duration, tapDuration time.Duration) flowsvc.ActionHandler {
+	return func(ac flowsvc.ActionContext) flowsvc.ActionFinalizer {
 		deactivateCh := make(chan struct{})
 		timer := time.NewTimer(delay)
 		go func() {
@@ -39,7 +41,7 @@ func NewActionTapHoldHandler(onTap ActionHandler, onHold ActionHandler, delay ti
 					<-timer.C
 				}
 			}()
-			var deactivateHold ActionFinalizer
+			var deactivateHold flowsvc.ActionFinalizer
 			for {
 				select {
 				case <-timer.C:
@@ -59,7 +61,7 @@ func NewActionTapHoldHandler(onTap ActionHandler, onHold ActionHandler, delay ti
 				}
 			}
 		}()
-		return func(ac ActionContext) {
+		return func(ac flowsvc.ActionContext) {
 			close(deactivateCh)
 		}
 	}

@@ -14,16 +14,16 @@ import (
 
 type Bind struct{}
 
-func (r Bind) Metadata() flowsvc.NodeMetadata {
-	return flowsvc.NodeMetadata{
+func (r Bind) Descriptor() flowsvc.NodeTypeDescriptor {
+	return flowsvc.NodeTypeDescriptor{
 		DisplayName: "Bind",
 
-		UpstreamType:   flowsvc.NodeTypeMany,
-		DownstreamType: flowsvc.NodeTypeOne,
+		UpstreamType:   flowsvc.NodeLinkTypeMany,
+		DownstreamType: flowsvc.NodeLinkTypeOne,
 	}
 }
 
-func (r Bind) Runner(p flowsvc.RunnerProvider) (flowsvc.NodeRunner, error) {
+func (r Bind) CreateNode(p flowsvc.RunnerProvider) (flowsvc.Node, error) {
 	b := &BindRunner{
 		log: p.Log(),
 	}
@@ -46,7 +46,7 @@ type bindItem struct {
 	clear       flowsvc.ActionFinalizer
 }
 
-func (b *BindRunner) Configure(c flowsvc.RunnerConfigurator) error {
+func (b *BindRunner) Configure(c flowsvc.NodeConfigurator) error {
 	var items actiondsl.JSONExpressionItems
 	err := c.Unmarshal(&items)
 	if err != nil {
@@ -73,7 +73,7 @@ func (b *BindRunner) Configure(c flowsvc.RunnerConfigurator) error {
 
 func (b *BindRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsvc.FlowStream) error {
 	in := up.Subscribe(ctx)
-	sendCh := make(chan hidevent.HIDEvent)
+	sendCh := make(chan *hidevent.HIDEvent)
 	go func() {
 		for {
 			select {
@@ -88,7 +88,7 @@ func (b *BindRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsv
 		select {
 		case event := <-in:
 			hidEvent := event.Message.HIDEvent
-			b.triggerMappings(ctx, &hidEvent, sendCh)
+			b.triggerMappings(ctx, hidEvent, sendCh)
 			sendCh <- hidEvent
 		case <-ctx.Done():
 			return nil
@@ -100,7 +100,7 @@ type actionContext struct {
 	ctx   context.Context
 	event *atomic.Pointer[hidevent.HIDEvent]
 
-	sendCh chan<- hidevent.HIDEvent
+	sendCh chan<- *hidevent.HIDEvent
 }
 
 func (a *actionContext) Context() context.Context {
@@ -117,11 +117,11 @@ func (a *actionContext) HIDEvent(fn func(e *hidevent.HIDEvent)) {
 	}
 	fn(event)
 	if send && !event.IsEmpty() {
-		a.sendCh <- *event
+		a.sendCh <- event
 	}
 }
 
-func (b *BindRunner) triggerMappings(ctx context.Context, event *hidevent.HIDEvent, sendCh chan<- hidevent.HIDEvent) {
+func (b *BindRunner) triggerMappings(ctx context.Context, event *hidevent.HIDEvent, sendCh chan<- *hidevent.HIDEvent) {
 	am := b.mappings
 	ac := &actionContext{
 		ctx:    ctx,

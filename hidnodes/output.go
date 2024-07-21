@@ -14,16 +14,16 @@ import (
 
 type Output struct{}
 
-func (o Output) Metadata() flowsvc.NodeMetadata {
-	return flowsvc.NodeMetadata{
+func (o Output) Descriptor() flowsvc.NodeTypeDescriptor {
+	return flowsvc.NodeTypeDescriptor{
 		DisplayName: "Output",
 
-		UpstreamType:   flowsvc.NodeTypeMany,
-		DownstreamType: flowsvc.NodeTypeNone,
+		UpstreamType:   flowsvc.NodeLinkTypeMany,
+		DownstreamType: flowsvc.NodeLinkTypeNone,
 	}
 }
 
-func (o Output) Runner(p flowsvc.RunnerProvider) (flowsvc.NodeRunner, error) {
+func (o Output) CreateNode(p flowsvc.RunnerProvider) (flowsvc.Node, error) {
 	return &OutputRunner{
 		log: p.Log(),
 	}, nil
@@ -43,7 +43,7 @@ type OutputRunner struct {
 	etr  *hidevent.ETRTranscoder
 }
 
-func (o *OutputRunner) Configure(c flowsvc.RunnerConfigurator) error {
+func (o *OutputRunner) Configure(c flowsvc.NodeConfigurator) error {
 	cfg := outputConfig{}
 	if err := c.Unmarshal(&cfg); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
@@ -127,7 +127,7 @@ func (o *OutputRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flow
 		for {
 			select {
 			case event := <-sub:
-				reports := o.etr.OnEvent(event.Message.HIDEvent)
+				reports := o.etr.OnEvent(*event.Message.HIDEvent)
 				for _, report := range reports {
 					write <- hidparse.EncodeReport(report)
 				}
@@ -146,7 +146,7 @@ func (o *OutputRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flow
 					continue
 				}
 				event := o.rte.OnReport(report)
-				up.Broadcast(flowsvc.FlowEvent{HIDEvent: event})
+				up.Broadcast(flowsvc.FlowEvent{HIDEvent: &event})
 			case <-ctx.Done():
 				return
 			}

@@ -1,20 +1,22 @@
-package flowsvc
+package actions
 
 import (
 	"time"
+
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
 )
 
 type ActionTap struct{}
 
-func (a ActionTap) Metadata() ActionMetadata {
-	return ActionMetadata{
+func (a ActionTap) Metadata() flowsvc.ActionDescriptor {
+	return flowsvc.ActionDescriptor{
 		DisplayName: "Tap",
 		Description: "Tap action",
 		Signature:   "tap(action: Action, duration: Duration = 15ms)",
 	}
 }
 
-func (a ActionTap) Handler(p ActionProvider) (ActionHandler, error) {
+func (a ActionTap) Handler(p flowsvc.ActionProvider) (flowsvc.ActionHandler, error) {
 	action, err := p.ActionArg("action")
 	if err != nil {
 		return nil, err
@@ -22,8 +24,8 @@ func (a ActionTap) Handler(p ActionProvider) (ActionHandler, error) {
 	return NewActionTapHandler(action, p.Args().Duration("duration")), nil
 }
 
-func NewActionTapHandler(action ActionHandler, tapDuration time.Duration) ActionHandler {
-	return func(ac ActionContext) ActionFinalizer {
+func NewActionTapHandler(action flowsvc.ActionHandler, tapDuration time.Duration) flowsvc.ActionHandler {
+	return func(ac flowsvc.ActionContext) flowsvc.ActionFinalizer {
 		deactivate := action(ac)
 		go func() {
 			timer := time.NewTimer(tapDuration)
