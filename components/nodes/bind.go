@@ -26,7 +26,7 @@ func (r BindType) Descriptor() flowapi.NodeTypeDescriptor {
 
 func (r BindType) CreateNode(p flowapi.NodeProvider) (flowapi.Node, error) {
 	b := &Bind{
-		log: r.log,
+		log: r.log.With(zap.String("nodeId", p.Info().ID)),
 	}
 	return b, nil
 }

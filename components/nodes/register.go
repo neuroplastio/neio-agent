@@ -7,9 +7,9 @@ import (
 
 func Register(log *zap.Logger, reg *flowsvc.Registry) {
 	reg.MustRegisterNodeType("bind", BindType{
-		log: log,
+		log: log.Named("bind"),
 	})
 	reg.MustRegisterNodeType("mux", MuxType{
-		log: log,
+		log: log.Named("mux"),
 	})
 }

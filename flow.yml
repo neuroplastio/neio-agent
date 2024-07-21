@@ -27,12 +27,11 @@ nodes:
       fallback: out
     to: [symbols, out]
 
-    
+
   - id: symbols
     bind:
       M: key.1
     to: [out]
-
 
 
   - id: out

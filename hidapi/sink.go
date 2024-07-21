@@ -64,7 +64,7 @@ func (t *EventSink) initializeStates() {
 			// TODO: support empty dynamic arrays
 			// TODO: support const values (from first HIDState)
 			report.Fields[i] = bits.NewZeros(int(item.ReportCount * item.ReportSize))
-			t.log.Debug("[ETR] DataItem",
+			t.log.Debug("DataItem",
 				zap.Uint8("reportId", reportID),
 				zap.Any("usagePage", item.UsagePage),
 				zap.Any("usageMinimum", item.UsageMinimum),
@@ -74,7 +74,7 @@ func (t *EventSink) initializeStates() {
 		t.reports[reportID] = report
 		t.usageSets[reportID] = NewUsageSets(items)
 		for idx, usageSet := range t.usageSets[reportID] {
-			t.log.Debug("[ETR] Usage Set",
+			t.log.Debug("Usage Set",
 				zap.Uint8("reportId", reportID),
 				zap.Int("itemIdx", idx),
 				zap.String("page", fmt.Sprintf("%02x", usageSet.UsagePage())),
@@ -94,7 +94,7 @@ func (t *EventSink) initializeStates() {
 		for idx, usageValue := range t.usageValues[reportID] {
 			// TODO: handle overlapping usages
 			for _, usage := range usageValue.Usages() {
-				t.log.Debug("[ETR] Usage Value",
+				t.log.Debug("Usage Value",
 					zap.Uint8("reportId", reportID),
 					zap.Int("itemIdx", idx),
 					zap.String("usage", usage.String()),
@@ -121,7 +121,7 @@ func (t *EventSink) initializeStates() {
 	}
 	for usagePage, items := range t.usageSetRanges {
 		for _, item := range items {
-			t.log.Debug("[ETR] Usage Set Range",
+			t.log.Debug("Usage Set Range",
 				zap.Uint16("page", usagePage),
 				zap.Any("range", []uint16{item.start, item.end}),
 				zap.Any("reportId", item.addr.reportID),

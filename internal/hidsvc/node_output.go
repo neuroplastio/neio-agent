@@ -26,7 +26,8 @@ func (o OutputNodeType) Descriptor() flowapi.NodeTypeDescriptor {
 
 func (o OutputNodeType) CreateNode(p flowapi.NodeProvider) (flowapi.Node, error) {
 	return &OutputNode{
-		log: o.log,
+		id:  p.Info().ID,
+		log: o.log.With(zap.String("nodeId", p.Info().ID)),
 		hid: o.hid,
 	}, nil
 }
@@ -37,6 +38,7 @@ type outputConfig struct {
 }
 
 type OutputNode struct {
+	id  string
 	log *zap.Logger
 	hid *Service
 
@@ -52,7 +54,7 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 	if err := c.Unmarshal(&cfg); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	dev, err := o.hid.GetOutputDeviceHandle(cfg.Addr)
+	dev, err := o.hid.GetOutputDeviceHandle(cfg.Addr, o.id)
 	if err != nil {
 		return fmt.Errorf("failed to get output device %s: %w", cfg.Addr, err)
 	}
@@ -85,8 +87,8 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 	o.descRaw = descRaw
 	o.dev = dev
 	o.decoder = hidapi.NewOutputReportDecoder(desc)
-	o.source = hidapi.NewEventSource(o.log, desc.GetOutputDataItems())
-	o.sink = hidapi.NewEventSink(o.log, desc.GetInputDataItems())
+	o.source = hidapi.NewEventSource(o.log.Named("source"), desc.GetOutputDataItems())
+	o.sink = hidapi.NewEventSink(o.log.Named("sink"), desc.GetInputDataItems())
 	return nil
 }
 

@@ -45,16 +45,16 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	defer db.Close()
 
-	configSvc := configsvc.New(logger)
-	linuxHid := linux.NewBackend(logger, configSvc, a.config.UhidConfig)
-	hidSvc := hidsvc.New(db, logger, time.Now, hidsvc.WithBackend("linux", linuxHid))
+	configSvc := configsvc.New(logger.Named("config"))
+	linuxHid := linux.NewBackend(logger.Named("hid.linux"), configSvc, a.config.UhidConfig)
+	hidSvc := hidsvc.New(db, logger.Named("hid"), time.Now, hidsvc.WithBackend("linux", linuxHid))
 
 	registry := flowsvc.NewRegistry()
 	nodes.Register(logger, registry)
 	hidSvc.RegisterNodes(registry)
 	actions.Register(registry)
 
-	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, registry)
+	flowSvc := flowsvc.New(logger.Named("flow"), configSvc, a.config.FlowConfig, registry)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {

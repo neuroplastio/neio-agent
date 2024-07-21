@@ -109,21 +109,21 @@ type Mux struct {
 }
 
 func (f MuxType) CreateNode(p flowapi.NodeProvider) (flowapi.Node, error) {
-	runner := &Mux{
+	node := &Mux{
 		id:              p.Info().ID,
-		log:             f.log,
+		log:             f.log.With(zap.String("nodeId", p.Info().ID)),
 		activatedUsages: make(map[hidapi.Usage]string, 0),
 		signals:         make(chan any),
 		nodeIDs:         p.Info().Downstreams,
 		defaultRoute:    p.Info().Downstreams[len(p.Info().Downstreams)-1],
 	}
 
-	p.RegisterSignal("reset", runner.signalReset)
-	p.RegisterSignal("set", runner.signalSet)
-	p.RegisterSignal("unset", runner.signalUnset)
-	p.RegisterAction("switch", runner.actionSwitch)
+	p.RegisterSignal("reset", node.signalReset)
+	p.RegisterSignal("set", node.signalSet)
+	p.RegisterSignal("unset", node.signalUnset)
+	p.RegisterAction("switch", node.actionSwitch)
 
-	return runner, nil
+	return node, nil
 }
 
 type muxConfig struct {
@@ -165,21 +165,25 @@ func (r *Mux) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) e
 	in := up.Subscribe(ctx)
 	defer close(r.signals)
 	for {
+		changed := false
 		select {
 		case signal := <-r.signals:
 			// TODO: improve this
 			switch s := signal.(type) {
 			case muxReset:
+				changed = true
 				currentRoute = r.defaultRoute
 				routeList = routeList[:0]
 			case muxSet:
 				if s.route != currentRoute {
+					changed = true
 					routeList = append(routeList, s.route)
 					currentRoute = s.route
 				}
 			case muxUnset:
 				for i, route := range routeList {
 					if route == s.route {
+						changed = true
 						routeList = append(routeList[:i], routeList[i+1:]...)
 						if currentRoute == s.route {
 							if len(routeList) == 0 {
@@ -192,7 +196,9 @@ func (r *Mux) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) e
 					}
 				}
 			}
-			r.log.Debug("[MUX] Current route", zap.String("route", currentRoute))
+			if changed {
+				r.log.Info("Route changed", zap.String("route", currentRoute))
+			}
 		case event := <-in:
 			hidEvent := event.HID
 			deactEvents := make(map[string]*hidapi.Event)

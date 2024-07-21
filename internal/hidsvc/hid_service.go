@@ -136,8 +136,6 @@ func New(db *badger.DB, log *zap.Logger, now func() time.Time, opts ...Option) *
 }
 
 func (s *Service) Start(ctx context.Context) error {
-	s.log.Info("Starting HID service")
-
 	err := s.backendBus.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start backend bus: %w", err)
@@ -181,7 +179,7 @@ func (s *Service) Start(ctx context.Context) error {
 		}
 	}
 	close(s.ready)
-	s.log.Info("HID service started")
+	s.log.Info("Service started")
 	<-ctx.Done()
 	return nil
 }
@@ -239,7 +237,7 @@ func (s *Service) consumeEvents(ctx context.Context) {
 					case listeners == 0 && s.openedInputs[addr] != nil:
 						s.openedInputs[addr].Close()
 						delete(s.openedInputs, addr)
-						s.log.Info("input closed", zap.String("addr", addr.String()))
+						s.log.Debug("Input closed", zap.String("addr", addr.String()))
 					case listeners > 0 && s.openedInputs[addr] == nil:
 						dev, err := s.openInputDevice(ctx, addr)
 						if err != nil {
@@ -247,24 +245,24 @@ func (s *Service) consumeEvents(ctx context.Context) {
 							continue
 						}
 						s.openedInputs[addr] = dev
-						s.log.Info("input opened", zap.String("addr", addr.String()))
+						s.log.Debug("Input opened", zap.String("addr", addr.String()))
 					}
 				} else {
 					if s.openedInputs[addr] != nil {
 						s.openedInputs[addr].Close()
 						delete(s.openedInputs, addr)
-						s.log.Info("input closed", zap.String("addr", addr.String()))
+						s.log.Debug("Input closed", zap.String("addr", addr.String()))
 					}
 				}
 			case addr := <-s.checkOutputListeners:
-				s.log.Info("checking output listeners", zap.String("addr", addr.String()))
+				s.log.Debug("Checking output listeners", zap.String("addr", addr.String()))
 				listeners, _ := s.outputListeners.Load(addr)
 				if s.IsOutputConnected(addr) {
 					switch {
 					case listeners == 0 && s.openedOutputs[addr] != nil:
 						s.openedOutputs[addr].Close()
 						delete(s.openedOutputs, addr)
-						s.log.Info("output closed", zap.String("addr", addr.String()))
+						s.log.Debug("Output closed", zap.String("addr", addr.String()))
 					case listeners > 0 && s.openedOutputs[addr] == nil:
 						desc, _ := s.connectedOutputs.Load(addr)
 						if desc == nil {
@@ -277,13 +275,13 @@ func (s *Service) consumeEvents(ctx context.Context) {
 							continue
 						}
 						s.openedOutputs[addr] = dev
-						s.log.Info("output opened", zap.String("addr", addr.String()))
+						s.log.Debug("output opened", zap.String("addr", addr.String()))
 					}
 				} else {
 					if s.openedOutputs[addr] != nil {
 						s.openedOutputs[addr].Close()
 						delete(s.openedOutputs, addr)
-						s.log.Info("output closed", zap.String("addr", addr.String()))
+						s.log.Debug("Output closed", zap.String("addr", addr.String()))
 					}
 				}
 			}
@@ -472,10 +470,10 @@ func (s *Service) manageOutputListeners(event bus.Message[OutputBusKey, bus.Even
 func (s *Service) handleBackendEvent(ctx context.Context, backendID string, event BackendEvent) error {
 	switch {
 	case event.InputsChanged != nil:
-		s.log.Info("devices changed", zap.String("backend", backendID))
+		s.log.Debug("devices changed", zap.String("backend", backendID))
 		s.onBackendInputsChanged(ctx, backendID, event.InputsChanged)
 	case event.OutputsChanged != nil:
-		s.log.Info("outputs changed", zap.String("backend", backendID))
+		s.log.Debug("outputs changed", zap.String("backend", backendID))
 		s.onBackendOutputsChanged(backendID, event.OutputsChanged)
 	}
 	return nil
@@ -509,7 +507,7 @@ func (s *Service) onBackendInputsChanged(ctx context.Context, backendID string, 
 func (s *Service) onInputDisconnected(ctx context.Context, backendID, id string) {
 	addr := Address{Backend: backendID, ID: id}
 	s.connectedInputs.Delete(addr)
-	s.log.Info("input disconnected", zap.String("backend", backendID), zap.String("id", id))
+	s.log.Debug("input disconnected", zap.String("backend", backendID), zap.String("id", id))
 	s.inputBus.Publish(ctx, InputBusKey{
 		Type: InputDisconnected,
 		Addr: addr,
@@ -523,7 +521,7 @@ func (s *Service) onInputConnected(ctx context.Context, backendID string, bdev B
 		s.log.Error("failed to initialize device", zap.Error(err))
 		return
 	}
-	s.log.Info("input connected", zap.String("backend", backendID), zap.String("id", dev.Address.ID), zap.String("name", dev.Name), zap.Time("firstSeenAt", dev.FirstSeenAt))
+	s.log.Debug("input connected", zap.String("backend", backendID), zap.String("id", dev.Address.ID), zap.String("name", dev.Name), zap.Time("firstSeenAt", dev.FirstSeenAt))
 	s.connectedInputs.Store(dev.Address, struct{}{})
 	s.inputBus.Publish(ctx, InputBusKey{
 		Type: InputConnected,
@@ -543,7 +541,7 @@ func (s *Service) onBackendOutputsChanged(backendID string, event *BackendEventO
 
 func (s *Service) onOutputDisconnected(backendID, id string) {
 	s.connectedOutputs.Delete(Address{Backend: backendID, ID: id})
-	s.log.Info("output disconnected", zap.String("backend", backendID), zap.String("id", id))
+	s.log.Debug("output disconnected", zap.String("backend", backendID), zap.String("id", id))
 }
 
 func (s *Service) onOutputConnected(backendID string, bdev BackendOutputDevice) {
@@ -552,7 +550,7 @@ func (s *Service) onOutputConnected(backendID string, bdev BackendOutputDevice) 
 		s.log.Error("failed to initialize device", zap.Error(err))
 		return
 	}
-	s.log.Info("output connected", zap.String("backend", backendID), zap.String("id", dev.Address.ID), zap.String("name", dev.Name), zap.Time("firstSeenAt", dev.FirstSeenAt))
+	s.log.Debug("output connected", zap.String("backend", backendID), zap.String("id", dev.Address.ID), zap.String("name", dev.Name), zap.Time("firstSeenAt", dev.FirstSeenAt))
 	s.connectedOutputs.Store(dev.Address, nil)
 }
 
@@ -810,13 +808,14 @@ func (s *Service) GetInputDevice(addr Address) (HidInputDevice, error) {
 	return dev, nil
 }
 
-func (s *Service) GetInputDeviceHandle(addr Address) (*InputDeviceHandle, error) {
+func (s *Service) GetInputDeviceHandle(addr Address, alias string) (*InputDeviceHandle, error) {
 	dev, err := s.GetInputDevice(addr)
 	if err != nil {
 		return nil, err
 	}
 	return &InputDeviceHandle{
-		dev: dev,
+		alias: alias,
+		dev:   dev,
 		subscriber: s.inputBus.CreateSubscriber(InputBusKey{
 			Type: InputReportRead,
 			Addr: addr,
@@ -829,6 +828,7 @@ func (s *Service) GetInputDeviceHandle(addr Address) (*InputDeviceHandle, error)
 }
 
 type InputDeviceHandle struct {
+	alias      string
 	dev        HidInputDevice
 	subscriber InputSubscriber
 	publisher  InputPublisher
@@ -857,19 +857,21 @@ func (h *InputDeviceHandle) InputDevice() HidInputDevice {
 }
 
 type OutputDeviceHandle struct {
+	alias         string
 	dev           HidOutputDevice
 	subscriber    OutputSubscriber
 	publisher     OutputPublisher
 	setDescriptor func(desc []byte)
 }
 
-func (s *Service) GetOutputDeviceHandle(addr Address) (*OutputDeviceHandle, error) {
+func (s *Service) GetOutputDeviceHandle(addr Address, alias string) (*OutputDeviceHandle, error) {
 	dev, err := s.GetOutputDevice(addr)
 	if err != nil {
 		return nil, err
 	}
 	return &OutputDeviceHandle{
-		dev: dev,
+		alias: alias,
+		dev:   dev,
 		subscriber: s.outputBus.CreateSubscriber(OutputBusKey{
 			Type: OutputReportRead,
 			Addr: addr,
@@ -941,11 +943,11 @@ func (s *Service) IsOutputConnected(addr Address) bool {
 
 func (s *Service) RegisterNodes(reg flowapi.Registry) {
 	reg.MustRegisterNodeType("input", InputNodeType{
-		log: s.log,
+		log: s.log.Named("input"),
 		hid: s,
 	})
 	reg.MustRegisterNodeType("output", OutputNodeType{
-		log: s.log,
+		log: s.log.Named("output"),
 		hid: s,
 	})
 }
