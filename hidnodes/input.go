@@ -2,13 +2,13 @@ package hidnodes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
 	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
+	"go.uber.org/zap"
 )
 
 type Input struct{}
@@ -22,26 +22,10 @@ func (i Input) Metadata() flowsvc.NodeMetadata {
 	}
 }
 
-func (i Input) Runner(info flowsvc.NodeInfo, config json.RawMessage, provider flowsvc.NodeRunnerProvider) (flowsvc.NodeRunner, error) {
-	cfg := &inputConfig{}
-	if err := json.Unmarshal(config, cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-	dev, err := provider.HID().GetInputDeviceHandle(cfg.Addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get input device %s: %w", cfg.Addr, err)
-	}
-	desc, err := flowsvc.NewHIDReportDescriptorFromRaw(dev.InputDevice().BackendDevice.ReportDescriptor)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HID report descriptor: %w", err)
-	}
+func (i Input) Runner(p flowsvc.RunnerProvider) (flowsvc.NodeRunner, error) {
 	return &InputRunner{
-		dev:  dev,
-		desc: desc,
-		rte:  hidevent.NewRTE(provider.Log(), desc.Parsed().GetInputDataItems()),
-		etr:  hidevent.NewETR(provider.Log(), desc.Parsed().GetOutputDataItems()),
+		log: p.Log(),
 	}, nil
-
 }
 
 type inputConfig struct {
@@ -49,10 +33,31 @@ type inputConfig struct {
 }
 
 type InputRunner struct {
+	log  *zap.Logger
 	dev  *hidsvc.InputDeviceHandle
 	desc flowsvc.HIDReportDescriptor
 	rte  *hidevent.RTETranscoder
 	etr  *hidevent.ETRTranscoder
+}
+
+func (g *InputRunner) Configure(c flowsvc.RunnerConfigurator) error {
+	cfg := inputConfig{}
+	if err := c.Unmarshal(&cfg); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	dev, err := c.HID().GetInputDeviceHandle(cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("failed to get input device %s: %w", cfg.Addr, err)
+	}
+	desc, err := flowsvc.NewHIDReportDescriptorFromRaw(dev.InputDevice().BackendDevice.ReportDescriptor)
+	if err != nil {
+		return fmt.Errorf("failed to create HID report descriptor: %w", err)
+	}
+	g.dev = dev
+	g.desc = desc
+	g.rte = hidevent.NewRTE(g.log, desc.Parsed().GetInputDataItems())
+	g.etr = hidevent.NewETR(g.log, desc.Parsed().GetOutputDataItems())
+	return nil
 }
 
 func (g *InputRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsvc.FlowStream) error {

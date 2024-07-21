@@ -3,9 +3,9 @@ package flowsvc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
 	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hiddesc"
@@ -26,10 +26,14 @@ type NodeMetadata struct {
 
 	UpstreamType   NodeType
 	DownstreamType NodeType
+
+	Actions []ActionMetadata
+	Signals []SignalMetadata
 }
 
 type NodeInfo struct {
 	ID          string
+	Type        string
 	Metadata    NodeMetadata
 	Upstreams   []string
 	Downstreams []string
@@ -82,19 +86,38 @@ func NewHIDReportDescriptor(desc hiddesc.ReportDescriptor) (HIDReportDescriptor,
 
 type Node interface {
 	Metadata() NodeMetadata
-	Runner(info NodeInfo, config json.RawMessage, provider NodeRunnerProvider) (NodeRunner, error)
+	Runner(p RunnerProvider) (NodeRunner, error)
 }
 
-type NodeRunnerProvider interface {
-	HID() *hidsvc.Service
+type RunnerProvider interface {
 	Log() *zap.Logger
-	Actions() *ActionRegistry
-	State() *FlowState
+	Info() NodeInfo
+	RegisterAction(id string, creator ActionCreator)
+	RegisterSignal(id string, creator SignalCreator)
+}
+
+type RunnerConfigurator interface {
+	Unmarshal(to any) error
+
+	HID() *hidsvc.Service
+
+	ActionHandler(stmt actiondsl.Statement) (ActionHandler, error)
+	SignalHandler(stmt actiondsl.Statement) (SignalHandler, error)
 }
 
 type NodeRunner interface {
+	Configure(c RunnerConfigurator) error
 	Run(ctx context.Context, up FlowStream, down FlowStream) error
 }
+
+type ActionProvider interface {
+	Args() actiondsl.Arguments
+	ActionArg(argName string) (ActionHandler, error)
+	SignalArg(argName string) (SignalHandler, error)
+}
+
+type ActionCreator func(p ActionProvider) (ActionHandler, error)
+type SignalCreator func(p ActionProvider) (SignalHandler, error)
 
 type FlowEvent struct {
 	HIDEvent hidevent.HIDEvent

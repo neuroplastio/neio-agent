@@ -1,25 +1,19 @@
 package flowsvc
 
 import (
-	"context"
-
 	"github.com/neuroplastio/neuroplastio/internal/hidparse"
+	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 )
 
-func newActionUsageHandler(usages []hidparse.Usage) *actionUsageHandler {
-	return &actionUsageHandler{
-		usages: usages,
+func NewActionUsageHandler(usages []hidparse.Usage) ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		ac.HIDEvent(func(e *hidevent.HIDEvent) {
+			e.Activate(usages...)
+		})
+		return func(ac ActionContext) {
+			ac.HIDEvent(func(e *hidevent.HIDEvent) {
+				e.Deactivate(usages...)
+			})
+		}
 	}
-}
-
-type actionUsageHandler struct {
-	usages []hidparse.Usage
-}
-
-func (a *actionUsageHandler) Usages() []hidparse.Usage {
-	return a.usages
-}
-
-func (a *actionUsageHandler) Activate(ctx context.Context, activator UsageActivator) func() {
-	return activator(a.Usages())
 }

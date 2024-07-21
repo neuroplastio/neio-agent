@@ -2,7 +2,6 @@ package flowsvc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -27,17 +26,8 @@ type Service struct {
 	bus         *FlowBus
 	running     chan struct{}
 
-	actionRegistry *ActionRegistry
-	nodeRegistry   *NodeRegistry
-
-	state *FlowState
+	registry *Registry
 }
-
-// func() Node
-// func(cfg Config) Node
-// func(cfg Config) (Node, error)
-// func(cfg Config, hidSvc *hidsvc.Service) (Node, error)
-type NodeCreator any
 
 type (
 	FlowEventType uint8
@@ -101,19 +91,15 @@ func New(
 	config *configsvc.Service,
 	flowPath string,
 	hidSvc *hidsvc.Service,
-	nodes *NodeRegistry,
-	actions *ActionRegistry,
+	registry *Registry,
 ) *Service {
-	state := NewState(log)
 	return &Service{
-		config:         config,
-		log:            log,
-		flowPath:       flowPath,
-		hid:            hidSvc,
-		bus:            bus.NewBus[FlowEventKey, FlowEvent](log),
-		actionRegistry: actions,
-		nodeRegistry:   nodes,
-		state:          state,
+		config:   config,
+		log:      log,
+		flowPath: flowPath,
+		hid:      hidSvc,
+		bus:      bus.NewBus[FlowEventKey, FlowEvent](log),
+		registry: registry,
 	}
 }
 
@@ -144,11 +130,6 @@ func (s *Service) Start(ctx context.Context) error {
 	case <-s.bus.Ready():
 	}
 
-	err = s.state.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to start flow state: %w", err)
-	}
-
 	err = s.startGraph(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to compile flow: %w", err)
@@ -165,30 +146,23 @@ func (s *Service) onConfigChange(cfg FlowConfig, err error) {
 }
 
 func (s *Service) startGraph(cfg FlowConfig) error {
-	b := NewGraphBuilder()
+	b := NewGraphBuilder(s.log, s.registry, s.hid)
 
-	configs := make(map[string]json.RawMessage)
 	for _, node := range cfg.Nodes {
-		n, err := s.nodeRegistry.Get(node.Type)
-		if err != nil {
-			return fmt.Errorf("failed to create node %s (%s): %w", node.ID, node.Type, err)
-		}
-		b = b.AddNode(node.ID, n, node.To)
-		configs[node.ID] = node.Config
+		b = b.AddNode(node.Type, node.ID, node.To)
 	}
-
 	if err := b.Validate(); err != nil {
 		return fmt.Errorf("failed to validate graph: %w", err)
 	}
-	provider := nodeRunnerProvider{
-		hid:     s.hid,
-		log:     s.log,
-		actions: s.actionRegistry,
-		state:   s.state,
-	}
-	graph, err := b.Build(configs, provider, s.bus)
+	graph, err := b.Build()
 	if err != nil {
 		return fmt.Errorf("failed to build graph: %w", err)
+	}
+	for _, node := range cfg.Nodes {
+		err := graph.Configure(node.ID, node.Config)
+		if err != nil {
+			return fmt.Errorf("failed to configure node %s: %w", node.ID, err)
+		}
 	}
 	s.graphCtx, s.graphCancel = context.WithCancel(s.ctx)
 	s.graph = graph
@@ -198,7 +172,7 @@ func (s *Service) startGraph(cfg FlowConfig) error {
 		close(s.running)
 	}()
 	go func() {
-		err := s.graph.Run(s.graphCtx)
+		err := s.graph.Run(s.graphCtx, s.bus)
 		if err != nil {
 			s.log.Error("flow failed", zap.Error(err))
 		}
@@ -206,27 +180,4 @@ func (s *Service) startGraph(cfg FlowConfig) error {
 	}()
 
 	return nil
-}
-
-type nodeRunnerProvider struct {
-	hid     *hidsvc.Service
-	log     *zap.Logger
-	actions *ActionRegistry
-	state   *FlowState
-}
-
-func (n nodeRunnerProvider) HID() *hidsvc.Service {
-	return n.hid
-}
-
-func (n nodeRunnerProvider) Log() *zap.Logger {
-	return n.log
-}
-
-func (n nodeRunnerProvider) Actions() *ActionRegistry {
-	return n.actions
-}
-
-func (n nodeRunnerProvider) State() *FlowState {
-	return n.state
 }

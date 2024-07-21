@@ -28,20 +28,24 @@ func ParseDeclaration(decl string) (Declaration, error) {
 			shouldHaveDefault = true
 			switch p.Type {
 			case "string":
-				if p.Default.Value.String == nil {
+				if p.Default.Value == nil || p.Default.Value.String == nil {
 					return Declaration{}, fmt.Errorf("parameter %s default value should be a string", p.Name)
 				}
 			case "number":
-				if p.Default.Value.Number == nil {
+				if p.Default.Value == nil || p.Default.Value.Number == nil {
 					return Declaration{}, fmt.Errorf("parameter %s default value should be a number", p.Name)
 				}
 			case "boolean":
-				if p.Default.Value.Boolean == nil {
+				if p.Default.Value == nil || p.Default.Value.Boolean == nil {
 					return Declaration{}, fmt.Errorf("parameter %s default value should be a boolean", p.Name)
 				}
 			case "Duration":
 				if p.Default.Duration == nil {
 					return Declaration{}, fmt.Errorf("parameter %s default value should be a duration", p.Name)
+				}
+			case "Action", "Signal":
+				if p.Default.Value == nil || !p.Default.Value.IsNull() {
+					return Declaration{}, fmt.Errorf("default parameter for Action and Signal types can only be 'null'", p.Name)
 				}
 			case "any":
 			default:
@@ -52,26 +56,22 @@ func ParseDeclaration(decl string) (Declaration, error) {
 	return *result, nil
 }
 
-func ParseUsages(expr string) ([]string, error) {
+func ParseUsageStatement(expr string) (UsageStatement, error) {
 	result, err := usageParser.ParseString("", expr)
 	if err != nil {
-		return nil, err
+		return UsageStatement{}, err
 	}
-	return result.Usages, nil
+	return *result, nil
 }
 
-type Action struct {
-	Declaration
-
-	statement Statement
-	arguments Arguments
+type DeclarationCall struct {
+	declaration Declaration
+	statement   ExpressionStatement
+	arguments   Arguments
 }
 
-func NewAction(decl Declaration, stmt Statement) (Action, error) {
-	if decl.Action != stmt.Action {
-		return Action{}, fmt.Errorf("declaration and statement actions do not match")
-	}
-
+func NewDeclarationCall(decl Declaration, stmt ExpressionStatement) (DeclarationCall, error) {
+	// TODO: replace Call with just args
 	requiredParams := 0
 	for _, p := range decl.Parameters {
 		if p.Default == nil {
@@ -79,7 +79,7 @@ func NewAction(decl Declaration, stmt Statement) (Action, error) {
 		}
 	}
 	if len(stmt.Arguments) < requiredParams {
-		return Action{}, fmt.Errorf("not enough arguments provided: %d out of %d", len(stmt.Arguments), requiredParams)
+		return DeclarationCall{}, fmt.Errorf("not enough arguments provided: %d out of %d", len(stmt.Arguments), requiredParams)
 	}
 
 	for i, param := range decl.Parameters {
@@ -90,38 +90,42 @@ func NewAction(decl Declaration, stmt Statement) (Action, error) {
 		switch param.Type {
 		case "string":
 			if arg.Value.String == nil {
-				return Action{}, fmt.Errorf("argument %d should be a string", i)
+				return DeclarationCall{}, fmt.Errorf("argument %d should be a string", i)
 			}
 		case "number":
 			if arg.Value.Number == nil {
-				return Action{}, fmt.Errorf("argument %d should be a number", i)
+				return DeclarationCall{}, fmt.Errorf("argument %d should be a number", i)
 			}
 		case "boolean":
 			if arg.Value.Boolean == nil {
-				return Action{}, fmt.Errorf("argument %d should be a boolean", i)
+				return DeclarationCall{}, fmt.Errorf("argument %d should be a boolean", i)
 			}
 		case "Duration":
 			if arg.Duration == nil {
-				return Action{}, fmt.Errorf("argument %d should be a duration", i)
+				return DeclarationCall{}, fmt.Errorf("argument %d should be a duration", i)
 			}
 		case "Action":
-			if arg.Action == nil && arg.Action.Usages == nil {
-				return Action{}, fmt.Errorf("argument %d should be an action", i)
+			if arg.Expr == nil && arg.Usage == nil {
+				return DeclarationCall{}, fmt.Errorf("argument %d should be an action", i)
+			}
+		case "Signal":
+			if arg.Expr == nil {
+				return DeclarationCall{}, fmt.Errorf("argument %d should be a signal", i)
 			}
 		case "any":
 		default:
-			return Action{}, fmt.Errorf("unsupported type %s for a parameter: %s", param.Type, param.Name)
+			return DeclarationCall{}, fmt.Errorf("unsupported type %s for a parameter: %s", param.Type, param.Name)
 		}
 	}
 
-	return Action{
-		Declaration: decl,
+	return DeclarationCall{
+		declaration: decl,
 		statement:   stmt,
 		arguments:   NewArguments(decl.Parameters, stmt.Arguments),
 	}, nil
 }
 
-func (a Action) Args() Arguments {
+func (a DeclarationCall) Args() Arguments {
 	return a.arguments
 }
 
@@ -144,25 +148,31 @@ func NewArguments(parameters []Parameter, arguments []Argument) Arguments {
 }
 
 func (a Arguments) Argument(name string) Argument {
-	idx, ok := a.nameMap[name]
-	if !ok {
+	arg := a.ArgumentOrNil(name)
+	if arg == nil {
 		return Argument{
 			Value: &Value{},
 		}
 	}
+	return *arg
+}
+
+func (a Arguments) ArgumentOrNil(name string) *Argument {
+	idx, ok := a.nameMap[name]
+	if !ok {
+		return nil
+	}
 	if len(a.arguments) <= idx {
 		defaultValue := a.parameters[idx].Default
 		if defaultValue == nil {
-			return Argument{
-				Value: &Value{},
-			}
+			return nil
 		}
-		return Argument{
+		return &Argument{
 			Value:    defaultValue.Value,
 			Duration: defaultValue.Duration,
 		}
 	}
-	return a.arguments[idx]
+	return &a.arguments[idx]
 }
 
 func (a Arguments) String(name string) string {
@@ -189,12 +199,53 @@ func (a Arguments) Duration(name string) time.Duration {
 	return time.Duration(*arg.Duration)
 }
 
-func (a Arguments) Action(name string) Statement {
+func (a Arguments) Usages(name string) []string {
 	arg := a.Argument(name)
-	if arg.Action == nil {
-		return Statement{}
+	if arg.Usage == nil {
+		return nil
 	}
-	return *arg.Action
+	return arg.Usage.Usages
+}
+
+func (a Arguments) Expression(name string) ExpressionStatement {
+	arg := a.Argument(name)
+	if arg.Expr == nil {
+		return ExpressionStatement{}
+	}
+	return *arg.Expr
+}
+
+func (a Arguments) ExpressionOrNil(name string) *ExpressionStatement {
+	arg := a.ArgumentOrNil(name)
+	if arg == nil {
+		return nil
+	}
+	if arg.Expr == nil {
+		return nil
+	}
+	return arg.Expr
+}
+
+func (a Arguments) Statement(name string) Statement {
+	arg := a.Argument(name)
+	return Statement{
+		Expr:  arg.Expr,
+		Usage: arg.Usage,
+	}
+}
+
+func (a Arguments) StatementOrNil(name string) *Statement {
+	arg := a.ArgumentOrNil(name)
+	if arg == nil {
+		return nil
+	}
+	if arg.Expr == nil && arg.Usage == nil {
+		return nil
+	}
+	return &Statement{
+		Expr:  arg.Expr,
+		Usage: arg.Usage,
+	}
 }
 
 func (a Arguments) Int(name string) int {
@@ -236,5 +287,41 @@ func (a Arguments) Any(name string) any {
 			return bool(*arg.Value.Boolean)
 		}
 	}
+	return nil
+}
+
+type JSONExpressionMapItem struct {
+	Usage     UsageStatement
+	Statement Statement
+
+	UsageString     string
+	StatementString string
+}
+
+type JSONExpressionItems []JSONExpressionMapItem
+
+func (j *JSONExpressionItems) UnmarshalJSON(data []byte) error {
+	strings := make(map[string]string)
+	if err := json.Unmarshal(data, &strings); err != nil {
+		return err
+	}
+	items := make([]JSONExpressionMapItem, 0, len(strings))
+	for k, v := range strings {
+		usage, err := ParseUsageStatement(k)
+		if err != nil {
+			return err
+		}
+		stmt, err := ParseStatement(v)
+		if err != nil {
+			return err
+		}
+		items = append(items, JSONExpressionMapItem{
+			Usage:           usage,
+			Statement:       stmt,
+			UsageString:     k,
+			StatementString: v,
+		})
+	}
+	*j = JSONExpressionItems(items)
 	return nil
 }

@@ -18,11 +18,23 @@ func NewRegistry[C Component]() *Registry[C] {
 	}
 }
 
-func (r *Registry[C]) Register(id string, component C) {
+func (r *Registry[C]) Register(id string, component C) error {
 	if _, ok := r.components[id]; ok {
-		panic("component already registered")
+		return fmt.Errorf("component already registered: %s", id)
 	}
 	r.components[id] = component
+	return nil
+}
+
+func (r *Registry[C]) MustRegister(id string, component C) {
+	if err := r.Register(id, component); err != nil {
+		panic(err)
+	}
+}
+
+func (r *Registry[C]) Has(id string) bool {
+	_, ok := r.components[id]
+	return ok
 }
 
 func (r *Registry[C]) Get(id string) (C, error) {
@@ -31,4 +43,12 @@ func (r *Registry[C]) Get(id string) (C, error) {
 		return component, fmt.Errorf("component not found: %s", id)
 	}
 	return component, nil
+}
+
+func (r *Registry[C]) Components() map[string]C {
+	components := make(map[string]C, len(r.components))
+	for id, component := range r.components {
+		components[id] = component
+	}
+	return components
 }

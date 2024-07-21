@@ -2,7 +2,6 @@ package hidnodes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
@@ -10,6 +9,7 @@ import (
 	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
 	"github.com/neuroplastio/neuroplastio/pkg/hidevent"
 	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hiddesc"
+	"go.uber.org/zap"
 )
 
 type Output struct{}
@@ -23,46 +23,9 @@ func (o Output) Metadata() flowsvc.NodeMetadata {
 	}
 }
 
-func (o Output) Runner(info flowsvc.NodeInfo, config json.RawMessage, provider flowsvc.NodeRunnerProvider) (flowsvc.NodeRunner, error) {
-	cfg := &outputConfig{}
-	if err := json.Unmarshal(config, cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-	dev, err := provider.HID().GetOutputDeviceHandle(cfg.Addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get output device %s: %w", cfg.Addr, err)
-	}
-	merged := hiddesc.ReportDescriptor{}
-	outputID := uint8(1)
-	for _, addr := range cfg.DescriptorFrom {
-		inputDev, err := provider.HID().GetInputDevice(addr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get input device %s: %w", addr, err)
-		}
-		inputDesc, err := flowsvc.NewHIDReportDescriptorFromRaw(inputDev.BackendDevice.ReportDescriptor)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse input descriptor: %w", err)
-		}
-		for _, collection := range inputDesc.Parsed().Collections {
-			ids := make(map[uint8]uint8)
-			reports := collection.GetInputReport()
-			for _, report := range reports {
-				ids[report.ID] = outputID
-				outputID++
-			}
-			collection = replaceIDs(ids, collection)
-			merged.Collections = append(merged.Collections, collection)
-		}
-	}
-	desc, err := flowsvc.NewHIDReportDescriptor(merged)
-	if err != nil {
-		return nil, err
-	}
+func (o Output) Runner(p flowsvc.RunnerProvider) (flowsvc.NodeRunner, error) {
 	return &OutputRunner{
-		dev:  dev,
-		desc: desc,
-		rte:  hidevent.NewRTE(provider.Log(), desc.Parsed().GetOutputDataItems()),
-		etr:  hidevent.NewETR(provider.Log(), desc.Parsed().GetInputDataItems()),
+		log: p.Log(),
 	}, nil
 }
 
@@ -72,13 +35,57 @@ type outputConfig struct {
 }
 
 type OutputRunner struct {
+	log *zap.Logger
+
 	dev  *hidsvc.OutputDeviceHandle
 	desc flowsvc.HIDReportDescriptor
 	rte  *hidevent.RTETranscoder
 	etr  *hidevent.ETRTranscoder
 }
 
-func replaceIDs(ids map[uint8]uint8, collection hiddesc.Collection) hiddesc.Collection {
+func (o *OutputRunner) Configure(c flowsvc.RunnerConfigurator) error {
+	cfg := outputConfig{}
+	if err := c.Unmarshal(&cfg); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	dev, err := c.HID().GetOutputDeviceHandle(cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("failed to get output device %s: %w", cfg.Addr, err)
+	}
+	merged := hiddesc.ReportDescriptor{}
+	outputID := uint8(1)
+	for _, addr := range cfg.DescriptorFrom {
+		inputDev, err := c.HID().GetInputDevice(addr)
+		if err != nil {
+			return fmt.Errorf("failed to get input device %s: %w", addr, err)
+		}
+		inputDesc, err := flowsvc.NewHIDReportDescriptorFromRaw(inputDev.BackendDevice.ReportDescriptor)
+		if err != nil {
+			return fmt.Errorf("failed to parse input descriptor: %w", err)
+		}
+		for _, collection := range inputDesc.Parsed().Collections {
+			ids := make(map[uint8]uint8)
+			reports := collection.GetInputReport()
+			for _, report := range reports {
+				ids[report.ID] = outputID
+				outputID++
+			}
+			collection = o.replaceIDs(ids, collection)
+			merged.Collections = append(merged.Collections, collection)
+		}
+	}
+	desc, err := flowsvc.NewHIDReportDescriptor(merged)
+	if err != nil {
+		return err
+	}
+	o.dev = dev
+	o.desc = desc
+	o.rte = hidevent.NewRTE(o.log, desc.Parsed().GetOutputDataItems())
+	o.etr = hidevent.NewETR(o.log, desc.Parsed().GetInputDataItems())
+	return nil
+}
+
+func (o *OutputRunner) replaceIDs(ids map[uint8]uint8, collection hiddesc.Collection) hiddesc.Collection {
 	collectionCopy := hiddesc.Collection{
 		UsagePage: collection.UsagePage,
 		UsageID:   collection.UsageID,
@@ -95,7 +102,7 @@ func replaceIDs(ids map[uint8]uint8, collection hiddesc.Collection) hiddesc.Coll
 			itemCopy.DataItem = &(*item.DataItem)
 		}
 		if itemCopy.Collection != nil {
-			cc := replaceIDs(ids, *itemCopy.Collection)
+			cc := o.replaceIDs(ids, *itemCopy.Collection)
 			itemCopy.Collection = &cc
 		}
 		if itemCopy.DataItem != nil {

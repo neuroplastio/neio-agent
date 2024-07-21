@@ -145,12 +145,6 @@ func (r *RTETranscoder) OnReport(report hidparse.Report) HIDEvent {
 		r.log.Error("report field count mismatch")
 		return *NewHIDEvent()
 	}
-	if r.log.Level() <= zap.DebugLevel {
-		r.log.Debug("[RTE] Report",
-			zap.Uint8("id", report.ID),
-			zap.Any("fields", report.FieldsStrings()),
-		)
-	}
 
 	event := NewHIDEvent()
 	for i, item := range r.dataItems[report.ID] {

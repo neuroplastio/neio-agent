@@ -1,12 +1,36 @@
-
 nodes:
   - id: kb
     input:
       addr: linux/3434:fe0e:0
+    to: [base]
+  - id: mouse
+    input:
+      addr: linux/046d:c547:0
+    to: [base]
+
+  - id: base
+    bind:
+      F1: signal($layer.set("symbols"), $layer.unset("symbols"))
+      F2: $layer.switch("symbols")
+      F3: lock($layer.switch("symbols"))
+      F5: signal($layer.reset())
+      F6: signal(null, $layer.reset())
+
+    to: [layer]
+
+  - id: layer
+    mux:
+      fallback: out
+    to: [symbols, out]
+
+  - id: symbols
+    bind: {}
     to: [out]
+
 
   - id: out
     output:
       addr: linux/uhid:neuroplastio
       descriptorFrom:
         - linux/3434:fe0e:0
+        - linux/046d:c547:0

@@ -1,62 +1,43 @@
 package flowsvc
 
 import (
-	"context"
 	"time"
-
-	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
-	"github.com/neuroplastio/neuroplastio/internal/hidparse"
 )
 
 type ActionTap struct{}
 
-func (a ActionTap) Metadata() HIDUsageActionMetadata {
-	return HIDUsageActionMetadata{
+func (a ActionTap) Metadata() ActionMetadata {
+	return ActionMetadata{
 		DisplayName: "Tap",
 		Description: "Tap action",
-		Declaration: "tap(action: Action, duration: Duration = 15ms)",
+		Signature:   "tap(action: Action, duration: Duration = 15ms)",
 	}
 }
 
-func (a ActionTap) Handler(args actiondsl.Arguments, provider *HIDActionProvider) (HIDUsageActionHandler, error) {
-	action, err := provider.ActionRegistry.New(args.Action("action"))
+func (a ActionTap) Handler(p ActionProvider) (ActionHandler, error) {
+	action, err := p.ActionArg("action")
 	if err != nil {
 		return nil, err
 	}
-	return newTapActionHandler(action, args.Duration("duration")), nil
+	return NewActionTapHandler(action, p.Args().Duration("duration")), nil
 }
 
-// actionTapHandler is not supposed to be used as a standalone action. It is a base action that is used to create more complex actions.
-type actionTapHandler struct {
-	action   HIDUsageActionHandler
-	duration time.Duration
-}
-
-func newTapActionHandler(action HIDUsageActionHandler, duration time.Duration) *actionTapHandler {
-	return &actionTapHandler{
-		action:   action,
-		duration: duration,
-	}
-}
-
-func (a *actionTapHandler) Usages() []hidparse.Usage {
-	return a.action.Usages()
-}
-
-func (a *actionTapHandler) Activate(ctx context.Context, activator UsageActivator) func() {
-	deactivate := a.action.Activate(ctx, activator)
-	go func() {
-		timer := time.NewTimer(a.duration)
-		defer func() {
-			if !timer.Stop() {
-				<-timer.C
+func NewActionTapHandler(action ActionHandler, tapDuration time.Duration) ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		deactivate := action(ac)
+		go func() {
+			timer := time.NewTimer(tapDuration)
+			defer func() {
+				if !timer.Stop() {
+					<-timer.C
+				}
+			}()
+			select {
+			case <-timer.C:
+				deactivate(ac)
+			case <-ac.Context().Done():
 			}
 		}()
-		select {
-		case <-timer.C:
-			deactivate()
-		case <-ctx.Done():
-		}
-	}()
-	return func() {}
+		return nil
+	}
 }

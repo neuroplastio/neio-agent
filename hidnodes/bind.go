@@ -2,7 +2,6 @@ package hidnodes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
@@ -24,65 +23,51 @@ func (r Bind) Metadata() flowsvc.NodeMetadata {
 	}
 }
 
-func (r Bind) Runner(info flowsvc.NodeInfo, config json.RawMessage, provider flowsvc.NodeRunnerProvider) (flowsvc.NodeRunner, error) {
+func (r Bind) Runner(p flowsvc.RunnerProvider) (flowsvc.NodeRunner, error) {
 	b := &BindRunner{
-		log: provider.Log(),
-	}
-	err := parseConfig(config, b, provider.Actions())
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		log: p.Log(),
 	}
 	return b, nil
 }
 
 type BindRunner struct {
-	log          *zap.Logger
-	bindMappings []bindItem
+	log      *zap.Logger
+	mappings []bindItem
 
 	event atomic.Pointer[hidevent.HIDEvent]
 }
 
 type bindItem struct {
 	trigger   []hidparse.Usage
-	handler   flowsvc.HIDUsageActionHandler
+	handler   flowsvc.ActionHandler
 	triggered map[int]struct{}
 
 	isTriggered bool
-	clear       func()
+	clear       flowsvc.ActionFinalizer
 }
 
-func parseConfig(data json.RawMessage, bind *BindRunner, registry *flowsvc.ActionRegistry) error {
-	stringMap := make(map[string]string)
-	err := json.Unmarshal(data, &stringMap)
+func (b *BindRunner) Configure(c flowsvc.RunnerConfigurator) error {
+	var items actiondsl.JSONExpressionItems
+	err := c.Unmarshal(&items)
 	if err != nil {
 		return err
 	}
 
-	mappings := make([]bindItem, 0, len(stringMap))
-	for trigger, stmtString := range stringMap {
-		usageStrings, err := actiondsl.ParseUsages(trigger)
+	for _, item := range items {
+		usages, err := flowsvc.ParseUsages(item.Usage.Usages)
 		if err != nil {
 			return err
 		}
-		usages, err := flowsvc.ParseUsages(usageStrings)
+		handler, err := c.ActionHandler(item.Statement)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create action handler for %s %s: %w", item.UsageString, item.StatementString, err)
 		}
-		stmt, err := actiondsl.ParseStatement(stmtString)
-		if err != nil {
-			return fmt.Errorf("failed to parse action statement: %w", err)
-		}
-		handler, err := registry.New(stmt)
-		if err != nil {
-			return fmt.Errorf("failed to create action handler: %w", err)
-		}
-		mappings = append(mappings, bindItem{
+		b.mappings = append(b.mappings, bindItem{
 			trigger:   usages,
 			handler:   handler,
 			triggered: make(map[int]struct{}),
 		})
 	}
-	bind.bindMappings = mappings
 	return nil
 }
 
@@ -103,9 +88,7 @@ func (b *BindRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsv
 		select {
 		case event := <-in:
 			hidEvent := event.Message.HIDEvent
-			b.event.Store(&hidEvent)
-			b.triggerMappings(ctx, sendCh)
-			b.event.Store(nil)
+			b.triggerMappings(ctx, &hidEvent, sendCh)
 			sendCh <- hidEvent
 		case <-ctx.Done():
 			return nil
@@ -113,10 +96,40 @@ func (b *BindRunner) Run(ctx context.Context, up flowsvc.FlowStream, down flowsv
 	}
 }
 
-func (b *BindRunner) triggerMappings(ctx context.Context, sendCh chan<- hidevent.HIDEvent) {
-	event := b.event.Load()
-	am := b.bindMappings
-	for mappingIdx, mapping := range b.bindMappings {
+type actionContext struct {
+	ctx   context.Context
+	event *atomic.Pointer[hidevent.HIDEvent]
+
+	sendCh chan<- hidevent.HIDEvent
+}
+
+func (a *actionContext) Context() context.Context {
+	return a.ctx
+}
+
+func (a *actionContext) HIDEvent(fn func(e *hidevent.HIDEvent)) {
+	event := a.event.Load()
+	send := false
+	if event == nil {
+		send = true
+		event = hidevent.NewHIDEvent()
+		a.event.Store(event)
+	}
+	fn(event)
+	if send && !event.IsEmpty() {
+		a.sendCh <- *event
+	}
+}
+
+func (b *BindRunner) triggerMappings(ctx context.Context, event *hidevent.HIDEvent, sendCh chan<- hidevent.HIDEvent) {
+	am := b.mappings
+	ac := &actionContext{
+		ctx:    ctx,
+		event:  atomic.NewPointer(event),
+		sendCh: sendCh,
+	}
+	defer ac.event.Store(nil)
+	for mappingIdx, mapping := range b.mappings {
 		for usageIdx, usage := range mapping.trigger {
 			usageEvent, ok := event.Usage(usage)
 			if !ok || usageEvent.Activate == nil {
@@ -132,37 +145,14 @@ func (b *BindRunner) triggerMappings(ctx context.Context, sendCh chan<- hidevent
 		isTriggered := len(am[mappingIdx].triggered) == len(am[mappingIdx].trigger)
 		if isTriggered && !mapping.isTriggered {
 			am[mappingIdx].isTriggered = true
-			am[mappingIdx].clear = mapping.handler.Activate(ctx, func(usages []hidparse.Usage) func() {
-				event := b.event.Load()
-				var send bool
-				if event == nil {
-					event = hidevent.NewHIDEvent()
-					send = true
-				}
-				b.log.Debug("Activating usage", zap.String("usages", usages[0].String()))
-				event.Activate(usages...)
-				if send {
-					sendCh <- *event
-				}
-				return func() {
-					event := b.event.Load()
-					var send bool
-					if event == nil {
-						event = hidevent.NewHIDEvent()
-						send = true
-					}
-					event.Deactivate(usages...)
-					b.log.Debug("Deactivating usage", zap.String("usages", usages[0].String()))
-					if send {
-						sendCh <- *event
-					}
-				}
-			})
+			am[mappingIdx].clear = mapping.handler(ac)
 		}
-		if !isTriggered && mapping.isTriggered && mapping.clear != nil {
+		if !isTriggered && mapping.isTriggered {
 			am[mappingIdx].isTriggered = false
-			am[mappingIdx].clear()
-			am[mappingIdx].clear = nil
+			if mapping.clear != nil {
+				am[mappingIdx].clear(ac)
+				am[mappingIdx].clear = nil
+			}
 		}
 	}
 }

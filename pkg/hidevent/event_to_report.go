@@ -152,11 +152,6 @@ func (t *ETRTranscoder) OnEvent(e HIDEvent) []hidparse.Report {
 		}
 		return reports[reportMap[reportID]]
 	}
-	if t.log.Level() <= zap.DebugLevel {
-		t.log.Debug("[ETR] Event",
-			zap.Any("usages", e.usages),
-		)
-	}
 	for _, usageEvent := range e.Usages() {
 		usage := usageEvent.Usage
 		var (
@@ -194,7 +189,6 @@ func (t *ETRTranscoder) OnEvent(e HIDEvent) []hidparse.Report {
 			} else {
 				t.usageActivations[addr.reportID][usage]++
 				count := t.usageActivations[addr.reportID][usage]
-				t.log.Debug("[ETR] Usage activation count", zap.Int("count", count), zap.String("usage", usage.String()))
 				if count == 1 {
 					t.usageSets[addr.reportID][addr.itemIdx].SetUsage(report.Fields[addr.itemIdx], usage)
 				}
@@ -205,11 +199,8 @@ func (t *ETRTranscoder) OnEvent(e HIDEvent) []hidparse.Report {
 			} else {
 				t.usageActivations[addr.reportID][usage]--
 				count := t.usageActivations[addr.reportID][usage]
-				t.log.Debug("[ETR] Usage activation count", zap.Int("count", count), zap.String("usage", usage.String()))
-				if count == 0 {
-					t.log.Debug("[ETR] Before clearing", zap.Any("fields", report.FieldsStrings()))
+				if count <= 0 {
 					t.usageSets[addr.reportID][addr.itemIdx].ClearUsage(report.Fields[addr.itemIdx], usage)
-					t.log.Debug("[ETR] After clearing", zap.Any("fields", report.FieldsStrings()))
 					delete(t.usageActivations[addr.reportID], usage)
 				}
 			}
@@ -220,12 +211,6 @@ func (t *ETRTranscoder) OnEvent(e HIDEvent) []hidparse.Report {
 
 	for _, report := range reports {
 		t.reports[report.ID] = t.stripRelativeValues(report.Clone())
-		if t.log.Level() <= zap.DebugLevel {
-			t.log.Debug("[ETR] Report",
-				zap.Uint8("id", report.ID),
-				zap.Any("fields", report.FieldsStrings()),
-			)
-		}
 	}
 
 	return reports

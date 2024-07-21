@@ -9,15 +9,16 @@ import (
 )
 
 var (
-	ruleIdent      = lexer.SimpleRule{Name: "Ident", Pattern: `[a-z][\w\d]*`}
-	ruleUsageIdent = lexer.SimpleRule{Name: "UsageIdent", Pattern: `((key|btn)\.)?[0-9A-Z][\w\d]*`}
-	ruleUsageKey   = lexer.SimpleRule{Name: "UsageKey", Pattern: `[0-9]|([A-Z]\w*)`}
-	ruleType       = lexer.SimpleRule{Name: "Type", Pattern: `(string|number|boolean|any|Duration|Action)`}
-	ruleDuration   = lexer.SimpleRule{Name: "Duration", Pattern: `\d+(ns|us|µs|ms|s|m|h)`}
-	ruleString     = lexer.SimpleRule{Name: "String", Pattern: `"(\\"|[^"])*"`}
-	ruleNumber     = lexer.SimpleRule{Name: "Number", Pattern: `[-+]?(\d*\.)?\d+`}
-	rulePunct      = lexer.SimpleRule{Name: "Punct", Pattern: `[-[!@#$%^&*()+_={}\|:;"'<,>.?/]|]`}
-	ruleWhitespace = lexer.SimpleRule{Name: "Whitespace", Pattern: `[ \t]+`}
+	ruleIdent          = lexer.SimpleRule{Name: "Ident", Pattern: `[a-z][\w\d]*`}
+	ruleUsageIdent     = lexer.SimpleRule{Name: "UsageIdent", Pattern: `((key|btn)\.)?[0-9A-Z][\w\d]*`}
+	ruleUsageKey       = lexer.SimpleRule{Name: "UsageKey", Pattern: `[0-9]|([A-Z]\w*)`}
+	ruleType           = lexer.SimpleRule{Name: "Type", Pattern: `(string|number|boolean|any|Duration|Action|Signal)`}
+	ruleDuration       = lexer.SimpleRule{Name: "Duration", Pattern: `\d+(ns|us|µs|ms|s|m|h)`}
+	ruleString         = lexer.SimpleRule{Name: "String", Pattern: `"(\\"|[^"])*"`}
+	ruleNumber         = lexer.SimpleRule{Name: "Number", Pattern: `[-+]?(\d*\.)?\d+`}
+	rulePunct          = lexer.SimpleRule{Name: "Punct", Pattern: `[-[!@#$%^&*()+_={}\|:;"'<,>.?/]|]`}
+	ruleWhitespace     = lexer.SimpleRule{Name: "Whitespace", Pattern: `[ \t]+`}
+	ruleReferenceIdent = lexer.SimpleRule{Name: "ReferenceIdent", Pattern: `\$[a-z][\w\d]*\.[a-z][\w\d]*`}
 )
 
 var statementLexer = lexer.MustSimple([]lexer.SimpleRule{
@@ -26,6 +27,7 @@ var statementLexer = lexer.MustSimple([]lexer.SimpleRule{
 	ruleString,
 	ruleNumber,
 	ruleUsageIdent,
+	ruleReferenceIdent,
 	ruleIdent,
 	rulePunct,
 })
@@ -37,33 +39,50 @@ var statementParser = participle.MustBuild[Statement](
 	participle.Unquote("String"),
 )
 
-var usageParser = participle.MustBuild[Usages](
+var usageParser = participle.MustBuild[UsageStatement](
 	participle.Lexer(statementLexer),
 	participle.UseLookahead(2),
 	participle.Elide(ruleWhitespace.Name),
 	participle.Unquote("String"),
 )
 
-type Usages struct {
+type Statement struct {
+	Usage *UsageStatement      `parser:"@@ |" json:"usage,omitempty"`
+	Expr  *ExpressionStatement `parser:"@@" json:"expr,omitempty"`
+}
+
+type UsageStatement struct {
 	Usages []string `parser:"@UsageIdent ('+' @UsageIdent)*" json:"usages,omitempty"`
 }
 
-type Statement struct {
-	Usages    []string   `parser:"@UsageIdent ('+' @UsageIdent)* |" json:"usages,omitempty"`
-	Action    string     `parser:"@Ident" json:"action"`
-	Arguments []Argument `parser:"'(' @@? (',' @@)* ')'" json:"arguments,omitempty"`
+type ExpressionStatement struct {
+	Identifier string     `parser:"(@ReferenceIdent | @Ident)" json:"identifier"`
+	Arguments  []Argument `parser:"'(' @@? (',' @@)* ')'" json:"arguments,omitempty"`
 }
 
 type Argument struct {
-	Action   *Statement `parser:"@@ |" json:"action,omitempty"`
-	Duration *Duration  `parser:"@Duration |" json:"duration,omitempty"`
-	Value    *Value     `parser:"@@" json:"value,omitempty"`
+	Usage    *UsageStatement      `parser:"@@ |" json:"usage,omitempty"`
+	Expr     *ExpressionStatement `parser:"@@ |" json:"expr,omitempty"`
+	Duration *Duration            `parser:"@Duration |" json:"duration,omitempty"`
+	Value    *Value               `parser:"@@" json:"value,omitempty"`
 }
 
 type Value struct {
 	String  *string  `parser:"@String |"`
 	Number  *Number  `parser:"@Number |"`
-	Boolean *Boolean `parser:"@('true'|'false')"`
+	Boolean *Boolean `parser:"@('true'|'false') |"`
+	Null    *Null    `parser:"@('null')"`
+}
+
+type Null struct{}
+
+func (n *Null) Capture(values []string) error {
+	*n = Null{}
+	return nil
+}
+
+func (v *Value) IsNull() bool {
+	return v.String == nil && v.Number == nil && v.Boolean == nil
 }
 
 func (v *Value) MarshalJSON() ([]byte, error) {
@@ -151,9 +170,8 @@ var declarationParser = participle.MustBuild[Declaration](
 )
 
 type Declaration struct {
-	Action         string      `parser:"@Ident" json:"action"`
-	Parameters     []Parameter `parser:"'(' ( @@ ( ',' @@ )* )? ')'" json:"parameters,omitempty"`
-	RequiredParams int
+	Identifier string      `parser:"@Ident" json:"action"`
+	Parameters []Parameter `parser:"'(' ( @@ ( ',' @@ )* )? ')'" json:"parameters,omitempty"`
 }
 
 type Parameter struct {

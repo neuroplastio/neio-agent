@@ -1,32 +1,21 @@
 package flowsvc
 
-import (
-	"context"
-
-	"github.com/neuroplastio/neuroplastio/internal/flowsvc/actiondsl"
-	"github.com/neuroplastio/neuroplastio/internal/hidparse"
-)
-
 type ActionNone struct{}
 
-func (a ActionNone) Metadata() HIDUsageActionMetadata {
-	return HIDUsageActionMetadata{
+func (a ActionNone) Metadata() ActionMetadata {
+	return ActionMetadata{
 		DisplayName: "None",
 		Description: "No action",
-		Declaration: "none()",
+		Signature:   "none()",
 	}
 }
 
-func (a ActionNone) Handler(args actiondsl.Arguments, provider *HIDActionProvider) (HIDUsageActionHandler, error) {
-	return &actionNoneHandler{}, nil
+func (a ActionNone) Handler(provider ActionProvider) (ActionHandler, error) {
+	return NewActionNoneHandler(), nil
 }
 
-type actionNoneHandler struct{}
-
-func (a *actionNoneHandler) Usages() []hidparse.Usage {
-	return []hidparse.Usage{}
-}
-
-func (a *actionNoneHandler) Activate(ctx context.Context, activator UsageActivator) func() {
-	return func() {}
+func NewActionNoneHandler() ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		return nil
+	}
 }

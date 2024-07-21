@@ -48,11 +48,10 @@ func (a *Agent) Run(ctx context.Context) error {
 	linuxHid := linux.NewBackend(logger, configSvc, a.config.UhidConfig)
 	hidSvc := hidsvc.New(db, logger, time.Now, hidsvc.WithBackend("linux", linuxHid))
 
-	nodes := flowsvc.NewNodeRegistry()
-	hidnodes.Register(nodes)
-	actions := flowsvc.NewActionRegistry()
+	registry := flowsvc.NewRegistry()
+	hidnodes.Register(registry)
 
-	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, hidSvc, nodes, actions)
+	flowSvc := flowsvc.New(logger, configSvc, a.config.FlowConfig, hidSvc, registry)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {

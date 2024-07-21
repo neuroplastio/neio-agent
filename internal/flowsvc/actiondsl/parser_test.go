@@ -26,12 +26,14 @@ func TestStatements(t *testing.T) {
 		{
 			input: `lock(key.Esc)`,
 			expected: Statement{
-				Action: "lock",
-				Arguments: []Argument{
-					{
-						Action: &Statement{
-							Usages: []string{
-								"key.Esc",
+				Expr: &ExpressionStatement{
+					Identifier: "lock",
+					Arguments: []Argument{
+						{
+							Usage: &UsageStatement{
+								Usages: []string{
+									"key.Esc",
+								},
 							},
 						},
 					},
@@ -41,25 +43,27 @@ func TestStatements(t *testing.T) {
 		{
 			input: `tapHold(Esc, LeftShift+LeftAlt, 250ms)`,
 			expected: Statement{
-				Action: "tapHold",
-				Arguments: []Argument{
-					{
-						Action: &Statement{
-							Usages: []string{
-								"Esc",
+				Expr: &ExpressionStatement{
+					Identifier: "tapHold",
+					Arguments: []Argument{
+						{
+							Usage: &UsageStatement{
+								Usages: []string{
+									"Esc",
+								},
 							},
 						},
-					},
-					{
-						Action: &Statement{
-							Usages: []string{
-								"LeftShift",
-								"LeftAlt",
+						{
+							Usage: &UsageStatement{
+								Usages: []string{
+									"LeftShift",
+									"LeftAlt",
+								},
 							},
 						},
-					},
-					{
-						Duration: ptr(Duration(250 * time.Millisecond)),
+						{
+							Duration: ptr(Duration(250 * time.Millisecond)),
+						},
 					},
 				},
 			},
@@ -67,33 +71,75 @@ func TestStatements(t *testing.T) {
 		{
 			input: `typeTest(0, key.2, false, true, "something")`,
 			expected: Statement{
-				Action: "typeTest",
-				Arguments: []Argument{
-					{
-						Value: &Value{
-							Number: ptr(Number("0")),
+				Expr: &ExpressionStatement{
+					Identifier: "typeTest",
+					Arguments: []Argument{
+						{
+							Value: &Value{
+								Number: ptr(Number("0")),
+							},
 						},
-					},
-					{
-						Action: &Statement{
-							Usages: []string{
-								"key.2",
+						{
+							Usage: &UsageStatement{
+								Usages: []string{
+									"key.2",
+								},
+							},
+						},
+						{
+							Value: &Value{
+								Boolean: ptr(Boolean(false)),
+							},
+						},
+						{
+							Value: &Value{
+								Boolean: ptr(Boolean(true)),
+							},
+						},
+						{
+							Value: &Value{
+								String: ptr("something"),
 							},
 						},
 					},
-					{
-						Value: &Value{
-							Boolean: ptr(Boolean(false)),
+				},
+			},
+		},
+		{
+			input: `$layer.switch("base")`,
+			expected: Statement{
+				Expr: &ExpressionStatement{
+					Identifier: "$layer.switch",
+					Arguments: []Argument{
+						{
+							Value: &Value{
+								String: ptr("base"),
+							},
 						},
 					},
-					{
-						Value: &Value{
-							Boolean: ptr(Boolean(true)),
+				},
+			},
+		},
+		{
+			input: `signal(null, $layer.unset("base"))`,
+			expected: Statement{
+				Expr: &ExpressionStatement{
+					Identifier: "signal",
+					Arguments: []Argument{
+						{
+							Value: &Value{},
 						},
-					},
-					{
-						Value: &Value{
-							String: ptr("something"),
+						{
+							Expr: &ExpressionStatement{
+								Identifier: "$layer.unset",
+								Arguments: []Argument{
+									{
+										Value: &Value{
+											String: ptr("base"),
+										},
+									},
+								},
+							},
 						},
 					},
 				},
@@ -131,7 +177,7 @@ func TestDeclarations(t *testing.T) {
 		{
 			input: `lock(action: Action)`,
 			expected: Declaration{
-				Action: "lock",
+				Identifier: "lock",
 				Parameters: []Parameter{
 					{
 						Name: "action",
@@ -143,7 +189,7 @@ func TestDeclarations(t *testing.T) {
 		{
 			input: `tapHold(onTap: Action, onHold: Action, delay: Duration = 250ms, tapDuration: Duration = 25ms)`,
 			expected: Declaration{
-				Action: "tapHold",
+				Identifier: "tapHold",
 				Parameters: []Parameter{
 					{
 						Name: "onTap",
@@ -171,9 +217,9 @@ func TestDeclarations(t *testing.T) {
 			},
 		},
 		{
-			input: `test(str: string = "val", num: number = 49, bool: boolean = false, dur: Duration = 100m, val: any)`,
+			input: `test(str: string = "val", num: number = 49, bool: boolean = false, dur: Duration = 100m, val: any = null)`,
 			expected: Declaration{
-				Action: "test",
+				Identifier: "test",
 				Parameters: []Parameter{
 					{
 						Name: "str",
@@ -212,6 +258,9 @@ func TestDeclarations(t *testing.T) {
 					{
 						Name: "val",
 						Type: "any",
+						Default: &ParameterValue{
+							Value: &Value{},
+						},
 					},
 				},
 			},
@@ -242,13 +291,13 @@ func TestDeclarations(t *testing.T) {
 func TestUsages(t *testing.T) {
 	type testCase struct {
 		input    string
-		expected Usages
+		expected UsageStatement
 	}
 
 	testCases := []testCase{
 		{
 			input: "LeftAlt+btn.5",
-			expected: Usages{
+			expected: UsageStatement{
 				Usages: []string{
 					"LeftAlt",
 					"btn.5",
