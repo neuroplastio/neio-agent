@@ -1,46 +1,115 @@
 nodes:
-  - id: kb
+  - id: keychron
+    to: [test]
     input:
       addr: linux/3434:fe0e:0
+  - id: mouse
+    input:
+      addr: linux/046d:c547:0
+    to: [out]
+  - id: moonlander
+    input:
+      addr: linux/3297:1969:0
     to: [base]
-  #- id: moonlander
-  #  input:
-  #    addr: linux/3297:1969:0
-  #  to: [base]
-  #- id: mouse
-  #  input:
-  #    addr: linux/046d:c547:0
-  #  to: [base]
+
+  - id: test
+    to: [out]
+    bind:
+      T: tapHold(T, H)
 
   - id: base
-    bind:
-      F1: signal($layer.set("symbols"), $layer.unset("symbols"))
-      F2: $layer.switch("symbols")
-      F3: lock($layer.switch("symbols"))
-      F5: signal($layer.reset())
-      F6: signal(null, $layer.reset())
-      btn.4: $layer.switch("symbols")
-      F7: mod(LeftShift, key.1)
-      F8: tap(char("A", false, 2ms), 4ms)
-      F9: sendString("abc")
     to: [layer]
+    bind:
+      LeftShift: tapHold(Esc, LeftShift, 130ms)
+      LeftControl: tapHold(Enter, LeftControl, 130ms)
+      F16: $layer.switch("control")
+      F17: $layer.switch("sym")
+      F18: RightGui+Enter
+      Enter: tapHold(Enter, $layer.switch("nav"), 130ms)
+
 
   - id: layer
+    to: [nav, sym, control, out]
     mux:
       fallback: out
-    to: [symbols, out]
 
-
-  - id: symbols
-    bind:
-      M: key.1
-      F: char("(")
+  - id: nav
     to: [out]
+    bind:
+      key.Y: Home
+      U: PageDown
+      I: PageUp
+      O: End
+      P: Code9A
+      H: LeftArrow
+      J: DownArrow
+      K: UpArrow
+      L: RightArrow
+      key.N: LeftControl+H
+      # M: Wheel -1
+      # ,: Wheel +1
+      Comma: LeftControl+L
 
+  - id: sym
+    to: [out]
+    bind:
+      Tab: LeftShift+Tab
+      Q: char("!")
+      W: char("@")
+      E: char("{")
+      R: char("}")
+      T: char("&")
+      A: char("[")
+      S: char("]")
+      D: char("(")
+      F: char(")")
+      G: char("*")
+      GraveAccent: char("~")
+      Z: char("\\")
+      X: char("|")
+      C: char("#")
+      V: char("$")
+      B: char("_")
+
+      key.Y: char("+")
+      H: char("=")
+      key.N: char("-")
+      P: sendString(":=")
+      Semicolon: char(":")
+      Code34: char("\"")
+
+      M: key.1
+      Comma: key.2
+      Period: key.3
+      J: key.4
+      K: key.5
+      L: key.6
+      U: key.7
+      I: key.8
+      O: key.9
+      Enter: key.0
+
+  - id: control
+    to: [out]
+    bind:
+      # F: Play/Pause
+      # G: Next Track
+      M: F1
+      Comma: F2
+      Period: F3
+      J: F4
+      K: F5
+      L: F6
+      U: F7
+      I: F8
+      O: F9
+      key.N: F10
+      H: F11
+      key.Y: F12
 
   - id: out
     output:
       addr: linux/uhid:neuroplastio
       descriptorFrom:
-        - linux/3434:fe0e:0
+        - linux/3297:1969:0
         - linux/046d:c547:0

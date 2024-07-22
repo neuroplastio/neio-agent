@@ -2,7 +2,6 @@ package actions
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/neuroplastio/neuroplastio/flowapi"
@@ -41,34 +40,6 @@ func NewActionChainHandler(ctx context.Context, actions []flowapi.ActionHandler,
 	if len(actions) == 0 {
 		return NewActionNoneHandler()
 	}
-	// TODO: this doesn't work well with shifted keys
-	// TODO: optimize shift key handling
-	sleeper := NewSleeper(ctx, delay)
-	fmt.Printf("sleeper created %v\n", sleeper)
-	action := func(ac flowapi.ActionContext) flowapi.ActionFinalizer {
-		fin := actions[len(actions)-1](ac)
-		if fin != nil {
-			fmt.Printf("sleeper1 %v\n", sleeper)
-			sleeper.do(func() {
-				fin(ac)
-			}, nil)
-		}
-		return nil
-	}
-	for i := len(actions) - 2; i >= 0; i-- {
-		i := i
-		prev := action
-		action = func(ac flowapi.ActionContext) flowapi.ActionFinalizer {
-			fin := actions[i](ac)
-			fmt.Printf("sleeper2 %v\n", sleeper)
-			sleeper.do(func() {
-				if fin != nil {
-					fin(ac)
-				}
-				prev(ac)
-			}, nil)
-			return nil
-		}
-	}
-	return action
+	// TODO
+	return NewActionNoneHandler()
 }

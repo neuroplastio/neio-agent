@@ -7,7 +7,6 @@ import (
 	"github.com/neuroplastio/neuroplastio/flowapi"
 	"github.com/neuroplastio/neuroplastio/flowapi/flowdsl"
 	"github.com/neuroplastio/neuroplastio/hidapi"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
@@ -42,7 +41,7 @@ type bindItem struct {
 	triggered map[int]struct{}
 
 	isTriggered bool
-	clear       flowapi.ActionFinalizer
+	finalize    flowapi.ActionFinalizer
 }
 
 func (b *Bind) Configure(c flowapi.NodeConfigurator) error {
@@ -73,6 +72,7 @@ func (b *Bind) Configure(c flowapi.NodeConfigurator) error {
 func (b *Bind) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) error {
 	in := up.Subscribe(ctx)
 	sendCh := make(chan *hidapi.Event)
+	actionPool := flowapi.NewActionContextPool(ctx, b.log, sendCh)
 	go func() {
 		for {
 			select {
@@ -99,44 +99,19 @@ func (b *Bind) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) 
 			if actionPool.TryCapture(ac) {
 				continue
 			}
-			sendCh <- event.HID
+			b.triggerMappings(ac)
+			if !event.IsEmpty() {
+				sendCh <- event
+			}
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-type actionContext struct {
-	ctx   context.Context
-	event *atomic.Pointer[hidapi.Event]
-
-	sendCh chan<- *hidapi.Event
-}
-
-func (a *actionContext) Context() context.Context {
-	return a.ctx
-}
-
-func (a *actionContext) HIDEvent(fn func(e *hidapi.Event)) {
-	event := a.event.Load()
-	send := false
-	if event == nil {
-		send = true
-		event = hidapi.NewEvent()
-	}
-	fn(event)
-	if send && !event.IsEmpty() {
-		a.sendCh <- event
-	}
-}
-
-func (b *Bind) triggerMappings(ctx context.Context, event *hidapi.Event, sendCh chan<- *hidapi.Event) {
+func (b *Bind) triggerMappings(ac flowapi.ActionContext) {
 	am := b.mappings
-	ac := &actionContext{
-		ctx:    ctx,
-		event:  atomic.NewPointer(event),
-		sendCh: sendCh,
-	}
+	event := ac.HIDEvent()
 	for mappingIdx, mapping := range b.mappings {
 		for usageIdx, usage := range mapping.trigger {
 			usageEvent, ok := event.Usage(usage)
@@ -153,15 +128,14 @@ func (b *Bind) triggerMappings(ctx context.Context, event *hidapi.Event, sendCh 
 		isTriggered := len(am[mappingIdx].triggered) == len(am[mappingIdx].trigger)
 		if isTriggered && !mapping.isTriggered {
 			am[mappingIdx].isTriggered = true
-			am[mappingIdx].clear = mapping.handler(ac)
+			am[mappingIdx].finalize = mapping.handler(ac)
 		}
 		if !isTriggered && mapping.isTriggered {
 			am[mappingIdx].isTriggered = false
-			if mapping.clear != nil {
-				am[mappingIdx].clear(ac)
-				am[mappingIdx].clear = nil
+			if mapping.finalize != nil {
+				am[mappingIdx].finalize(ac)
+				am[mappingIdx].finalize = nil
 			}
 		}
 	}
-	ac.event.Store(nil)
 }

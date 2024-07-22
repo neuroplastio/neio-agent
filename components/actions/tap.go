@@ -26,12 +26,11 @@ func (a Tap) CreateHandler(p flowapi.ActionProvider) (flowapi.ActionHandler, err
 }
 
 func NewActionTapHandler(ctx context.Context, action flowapi.ActionHandler, tapDuration time.Duration) flowapi.ActionHandler {
-	sleeper := NewSleeper(ctx, tapDuration)
 	return func(ac flowapi.ActionContext) flowapi.ActionFinalizer {
-		deactivate := action(ac)
-		sleeper.do(func() {
-			deactivate(ac)
-		}, nil)
-		return nil
+		return ac.Async(func(async flowapi.AsyncActionContext) {
+			fin := async.Action(action)
+			<-async.After(tapDuration)
+			async.Finish(fin)
+		})
 	}
 }
