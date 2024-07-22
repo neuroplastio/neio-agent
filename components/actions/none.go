@@ -4,7 +4,7 @@ import "github.com/neuroplastio/neuroplastio/flowapi"
 
 type None struct{}
 
-func (a None) Metadata() flowapi.ActionDescriptor {
+func (a None) Descriptor() flowapi.ActionDescriptor {
 	return flowapi.ActionDescriptor{
 		DisplayName: "None",
 		Description: "No action",
@@ -12,7 +12,7 @@ func (a None) Metadata() flowapi.ActionDescriptor {
 	}
 }
 
-func (a None) Handler(provider flowapi.ActionProvider) (flowapi.ActionHandler, error) {
+func (a None) CreateHandler(provider flowapi.ActionProvider) (flowapi.ActionHandler, error) {
 	return NewActionNoneHandler(), nil
 }
 

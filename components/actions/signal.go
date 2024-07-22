@@ -6,14 +6,14 @@ import (
 
 type Signal struct{}
 
-func (a Signal) Metadata() flowapi.ActionDescriptor {
+func (a Signal) Descriptor() flowapi.ActionDescriptor {
 	return flowapi.ActionDescriptor{
 		DisplayName: "Signal",
 		Signature:   "signal(onActivate: Signal = null, onDeactivate: Signal = null)",
 	}
 }
 
-func (a Signal) Handler(p flowapi.ActionProvider) (flowapi.ActionHandler, error) {
+func (a Signal) CreateHandler(p flowapi.ActionProvider) (flowapi.ActionHandler, error) {
 	onActivate, err := p.SignalArg("onActivate")
 	if err != nil {
 		return nil, err

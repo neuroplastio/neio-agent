@@ -151,6 +151,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		}
 		return reports[reportMap[reportID]]
 	}
+	t.log.Debug("Event", zap.Any("event", e.Usages()))
 	for _, usageEvent := range e.Usages() {
 		usage := usageEvent.Usage
 		var (

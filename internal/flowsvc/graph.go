@@ -311,11 +311,11 @@ func (r nodeConfigurator) Unmarshal(to any) error {
 }
 
 func (r nodeConfigurator) ActionHandler(stmt flowdsl.Statement) (flowapi.ActionHandler, error) {
-	return r.registry.ActionHandler(stmt)
+	return r.registry.ActionHandler(r.ctx, stmt)
 }
 
 func (r nodeConfigurator) SignalHandler(stmt flowdsl.Statement) (flowapi.SignalHandler, error) {
-	return r.registry.SignalHandler(stmt)
+	return r.registry.SignalHandler(r.ctx, stmt)
 }
 
 func (g *Graph) Configure(nodeID string, config json.RawMessage) error {
@@ -324,7 +324,7 @@ func (g *Graph) Configure(nodeID string, config json.RawMessage) error {
 		return fmt.Errorf("node %s not found", nodeID)
 	}
 	configurator := &nodeConfigurator{
-		ctx:      g.baseCtx,
+		ctx:      runner.ctx,
 		config:   config,
 		registry: g.registry,
 	}
@@ -338,12 +338,14 @@ func (g *Graph) Configure(nodeID string, config json.RawMessage) error {
 		if err != nil {
 			return fmt.Errorf("failed to create node %s: %w", nodeID, err)
 		}
+		newCtx, newCancel := context.WithCancel(g.baseCtx)
+		configurator.ctx = newCtx
 		err = newNode.Configure(configurator)
 		if err != nil {
 			return fmt.Errorf("failed to configure node %s: %w", nodeID, err)
 		}
 		g.log.Debug("Replacing node", zap.String("node", nodeID))
-		runner.replaceNode(newNode)
+		runner.replaceNode(newCtx, newCancel, newNode)
 		return nil
 	}
 	g.configs[nodeID] = config
@@ -402,28 +404,15 @@ func (g *Graph) Run() {
 	}
 }
 
-func NewActionUsageHandler(usages []hidapi.Usage) flowapi.ActionHandler {
-	return func(ac flowapi.ActionContext) flowapi.ActionFinalizer {
-		ac.HIDEvent(func(e *hidapi.Event) {
-			e.Activate(usages...)
-		})
-		return func(ac flowapi.ActionContext) {
-			ac.HIDEvent(func(e *hidapi.Event) {
-				e.Deactivate(usages...)
-			})
-		}
-	}
-}
-
 func (g *GraphRegistry) NewUsageActionHandler(stmt flowdsl.UsageStatement) (flowapi.ActionHandler, error) {
 	usages, err := hidapi.ParseUsages(stmt.Usages)
 	if err != nil {
 		return nil, err
 	}
-	return NewActionUsageHandler(usages), nil
+	return flowapi.NewActionUsageHandler(usages...), nil
 }
 
-func (g *GraphRegistry) ActionHandler(stmt flowdsl.Statement) (flowapi.ActionHandler, error) {
+func (g *GraphRegistry) ActionHandler(ctx context.Context, stmt flowdsl.Statement) (flowapi.ActionHandler, error) {
 	switch {
 	case stmt.Usage != nil:
 		return g.NewUsageActionHandler(*stmt.Usage)
@@ -441,7 +430,7 @@ func (g *GraphRegistry) ActionHandler(stmt flowdsl.Statement) (flowapi.ActionHan
 			if err != nil {
 				return nil, fmt.Errorf("failed to get action %q: %w", ident.Name, err)
 			}
-			creator = reg.action.Handler
+			creator = reg.action.CreateHandler
 			decl = reg.declaration
 		} else {
 			c, ok := g.actions[*ident.NodeID][ident.Name]
@@ -455,13 +444,13 @@ func (g *GraphRegistry) ActionHandler(stmt flowdsl.Statement) (flowapi.ActionHan
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signal %q: %w", ident.Name, err)
 		}
-		return creator(g.newActionProvider(args))
+		return creator(g.newActionProvider(ctx, args))
 	default:
 		return nil, fmt.Errorf("invalid action statement: %v", stmt)
 	}
 }
 
-func (g *GraphRegistry) SignalHandler(stmt flowdsl.Statement) (flowapi.SignalHandler, error) {
+func (g *GraphRegistry) SignalHandler(ctx context.Context, stmt flowdsl.Statement) (flowapi.SignalHandler, error) {
 	if stmt.Expr == nil {
 		return nil, fmt.Errorf("invalid signal statement")
 	}
@@ -480,7 +469,7 @@ func (g *GraphRegistry) SignalHandler(stmt flowdsl.Statement) (flowapi.SignalHan
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signal %q: %w", ident.Name, err)
 	}
-	return creator(g.newActionProvider(args))
+	return creator(g.newActionProvider(ctx, args))
 }
 
 func (g *GraphRegistry) parseIdentifier(ident string) (componentIdentifier, error) {
@@ -508,16 +497,22 @@ type componentIdentifier struct {
 	NodeID *string
 }
 
-func (g *GraphRegistry) newActionProvider(args flowapi.Arguments) flowapi.ActionProvider {
+func (g *GraphRegistry) newActionProvider(ctx context.Context, args flowapi.Arguments) flowapi.ActionProvider {
 	return &actionProvider{
+		ctx:      ctx,
 		args:     args,
 		registry: g,
 	}
 }
 
 type actionProvider struct {
+	ctx      context.Context
 	args     flowapi.Arguments
 	registry *GraphRegistry
+}
+
+func (a *actionProvider) Context() context.Context {
+	return a.ctx
 }
 
 func (a *actionProvider) Args() flowapi.Arguments {
@@ -529,7 +524,7 @@ func (a *actionProvider) ActionArg(argName string) (flowapi.ActionHandler, error
 	if stmt == nil {
 		return nil, nil
 	}
-	return a.registry.ActionHandler(*stmt)
+	return a.registry.ActionHandler(a.ctx, *stmt)
 }
 
 func (a *actionProvider) SignalArg(argName string) (flowapi.SignalHandler, error) {
@@ -537,7 +532,7 @@ func (a *actionProvider) SignalArg(argName string) (flowapi.SignalHandler, error
 	if stmt == nil {
 		return nil, nil
 	}
-	return a.registry.SignalHandler(*stmt)
+	return a.registry.SignalHandler(a.ctx, *stmt)
 }
 
 type nodeRunner struct {
@@ -555,17 +550,19 @@ type nodeRunner struct {
 }
 
 func newNodeRunner(ctx context.Context, log *zap.Logger, node flowapi.Node, up flowapi.Stream, down flowapi.Stream) *nodeRunner {
+	runnerCtx, cancel := context.WithCancel(ctx)
 	return &nodeRunner{
 		log:        log,
 		node:       node,
 		baseCtx:    ctx,
+		ctx:        runnerCtx,
+		cancel:     cancel,
 		upstream:   up,
 		downstream: down,
 	}
 }
 
 func (n *nodeRunner) start() {
-	n.ctx, n.cancel = context.WithCancel(n.baseCtx)
 	n.running = make(chan struct{})
 	go func() {
 		defer func() {
@@ -583,12 +580,12 @@ func (n *nodeRunner) start() {
 	}()
 }
 
-func (n *nodeRunner) replaceNode(node flowapi.Node) {
+func (n *nodeRunner) replaceNode(newCtx context.Context, newCancel context.CancelFunc, node flowapi.Node) {
 	n.log.Debug("Replacing node")
 	n.cancel()
 	<-n.running
 	n.node = node
-	n.ctx, n.cancel = context.WithCancel(n.baseCtx)
+	n.ctx, n.cancel = newCtx, newCancel
 	n.running = make(chan struct{})
 	n.start()
 }

@@ -42,7 +42,7 @@ func ParseDeclaration(decl string) (Declaration, error) {
 				if p.Default.Duration == nil {
 					return Declaration{}, fmt.Errorf("parameter %s default value should be a duration", p.Name)
 				}
-			case "Action", "Signal":
+			case "Action", "Signal", "Usage":
 				if p.Default.Value == nil || !p.Default.Value.IsNull() {
 					return Declaration{}, fmt.Errorf("parameter %s default value can only be 'null'", p.Name)
 				}

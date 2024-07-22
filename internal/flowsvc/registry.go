@@ -14,7 +14,7 @@ type Registry struct {
 }
 
 func (a *Registry) RegisterAction(action flowapi.Action) error {
-	metadata := action.Metadata()
+	metadata := action.Descriptor()
 	decl, err := flowdsl.ParseDeclaration(metadata.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to parse declaration for action %s: %w", metadata.Signature, err)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/neuroplastio/neuroplastio/flowapi/flowdsl"
+	"github.com/neuroplastio/neuroplastio/hidapi"
 )
 
 type Arguments struct {
@@ -34,10 +35,14 @@ func NewArguments(parameters []flowdsl.Parameter, arguments []flowdsl.Argument) 
 	}
 
 	for i, param := range parameters {
-		if param.Default != nil {
+		if len(arguments) <= i {
+			if param.Default == nil {
+				return Arguments{}, fmt.Errorf("missing argument: %s", param.Name)
+			}
 			continue
 		}
 		arg := arguments[i]
+		isNull := arg.Value != nil && arg.Value.IsNull()
 		switch param.Type {
 		case "string":
 			if arg.Value.String == nil {
@@ -56,12 +61,16 @@ func NewArguments(parameters []flowdsl.Parameter, arguments []flowdsl.Argument) 
 				return Arguments{}, fmt.Errorf("argument %d should be a duration", i)
 			}
 		case "Action":
-			if arg.Expr == nil && arg.Usage == nil {
+			if arg.Expr == nil && arg.Usage == nil && !isNull {
 				return Arguments{}, fmt.Errorf("argument %d should be an action", i)
 			}
 		case "Signal":
-			if arg.Expr == nil {
+			if arg.Expr == nil && !isNull {
 				return Arguments{}, fmt.Errorf("argument %d should be a signal", i)
+			}
+		case "Usage":
+			if arg.Usage == nil {
+				return Arguments{}, fmt.Errorf("argument %d should be a usage", i)
 			}
 		case "any":
 		default:
@@ -127,12 +136,16 @@ func (a Arguments) Duration(name string) time.Duration {
 	return time.Duration(*arg.Duration)
 }
 
-func (a Arguments) Usages(name string) []string {
+func (a Arguments) Usages(name string) ([]hidapi.Usage, error) {
 	arg := a.Argument(name)
 	if arg.Usage == nil {
-		return nil
+		return nil, nil
 	}
-	return arg.Usage.Usages
+	usages, err := hidapi.ParseUsages(arg.Usage.Usages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse usages: %w", err)
+	}
+	return usages, nil
 }
 
 func (a Arguments) Statement(name string) flowdsl.Statement {

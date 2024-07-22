@@ -6,7 +6,7 @@ import (
 
 type Lock struct{}
 
-func (a Lock) Metadata() flowapi.ActionDescriptor {
+func (a Lock) Descriptor() flowapi.ActionDescriptor {
 	return flowapi.ActionDescriptor{
 		DisplayName: "Lock",
 		Description: "Locks a button until it's pressed again.",
@@ -14,7 +14,7 @@ func (a Lock) Metadata() flowapi.ActionDescriptor {
 	}
 }
 
-func (a Lock) Handler(p flowapi.ActionProvider) (flowapi.ActionHandler, error) {
+func (a Lock) CreateHandler(p flowapi.ActionProvider) (flowapi.ActionHandler, error) {
 	action, err := p.ActionArg("action")
 	if err != nil {
 		return nil, err

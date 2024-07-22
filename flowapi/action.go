@@ -21,8 +21,8 @@ type SignalDescriptor struct {
 }
 
 type Action interface {
-	Metadata() ActionDescriptor
-	Handler(provider ActionProvider) (ActionHandler, error)
+	Descriptor() ActionDescriptor
+	CreateHandler(provider ActionProvider) (ActionHandler, error)
 }
 
 type ActionContext interface {
@@ -35,6 +35,7 @@ type ActionHandler func(ac ActionContext) ActionFinalizer
 type SignalHandler func(ctx context.Context)
 
 type ActionProvider interface {
+	Context() context.Context
 	Args() Arguments
 	ActionArg(argName string) (ActionHandler, error)
 	SignalArg(argName string) (SignalHandler, error)
@@ -42,3 +43,16 @@ type ActionProvider interface {
 
 type ActionCreator func(p ActionProvider) (ActionHandler, error)
 type SignalCreator func(p ActionProvider) (SignalHandler, error)
+
+func NewActionUsageHandler(usages ...hidapi.Usage) ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		ac.HIDEvent(func(e *hidapi.Event) {
+			e.Activate(usages...)
+		})
+		return func(ac ActionContext) {
+			ac.HIDEvent(func(e *hidapi.Event) {
+				e.Deactivate(usages...)
+			})
+		}
+	}
+}

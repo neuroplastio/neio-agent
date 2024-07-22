@@ -116,7 +116,6 @@ func (a *actionContext) HIDEvent(fn func(e *hidapi.Event)) {
 	if event == nil {
 		send = true
 		event = hidapi.NewEvent()
-		a.event.Store(event)
 	}
 	fn(event)
 	if send && !event.IsEmpty() {
@@ -131,7 +130,6 @@ func (b *Bind) triggerMappings(ctx context.Context, event *hidapi.Event, sendCh 
 		event:  atomic.NewPointer(event),
 		sendCh: sendCh,
 	}
-	defer ac.event.Store(nil)
 	for mappingIdx, mapping := range b.mappings {
 		for usageIdx, usage := range mapping.trigger {
 			usageEvent, ok := event.Usage(usage)
@@ -158,4 +156,5 @@ func (b *Bind) triggerMappings(ctx context.Context, event *hidapi.Event, sendCh 
 			}
 		}
 	}
+	ac.event.Store(nil)
 }

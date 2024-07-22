@@ -12,7 +12,7 @@ var (
 	ruleIdent          = lexer.SimpleRule{Name: "Ident", Pattern: `[a-z][\w\d]*`}
 	ruleUsageIdent     = lexer.SimpleRule{Name: "UsageIdent", Pattern: `((key|btn)\.)?[0-9A-Z][\w\d]*`}
 	ruleUsageKey       = lexer.SimpleRule{Name: "UsageKey", Pattern: `[0-9]|([A-Z]\w*)`}
-	ruleType           = lexer.SimpleRule{Name: "Type", Pattern: `(string|number|boolean|any|Duration|Action|Signal)`}
+	ruleType           = lexer.SimpleRule{Name: "Type", Pattern: `(string|number|boolean|any|Duration|Action|Signal|Usage)`}
 	ruleDuration       = lexer.SimpleRule{Name: "Duration", Pattern: `\d+(ns|us|µs|ms|s|m|h)`}
 	ruleString         = lexer.SimpleRule{Name: "String", Pattern: `"(\\"|[^"])*"`}
 	ruleNumber         = lexer.SimpleRule{Name: "Number", Pattern: `[-+]?(\d*\.)?\d+`}
