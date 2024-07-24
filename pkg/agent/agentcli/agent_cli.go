@@ -12,13 +12,13 @@ import (
 
 func NewAgentCmd(configDir string) *cobra.Command {
 	cfg := agent.Config{
-		DataDir:               filepath.Join(configDir, "data"),
-		FlowConfig:            filepath.Join(configDir, "flow.yml"),
-		DeviceConfig:          filepath.Join(configDir, "devices.yml"),
-		UhidConfig:            filepath.Join(configDir, "uhid.yml"),
+		DataDir:      filepath.Join(configDir, "data"),
+		FlowConfig:   filepath.Join(configDir, "flow.yml"),
+		DeviceConfig: filepath.Join(configDir, "devices.yml"),
+		UhidConfig:   filepath.Join(configDir, "uhid.yml"),
 	}
 	agentCmd := &cobra.Command{
-		Use:   "nplast-agent",
+		Use:   "neio-agent",
 		Short: "Neuroplast.io Agent",
 		Long:  `The Neuroplast.io Agent is a daemon that runs the core logic of the Neuroplast.io project.`,
 	}
