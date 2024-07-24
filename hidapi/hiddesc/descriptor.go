@@ -5,63 +5,6 @@ type ReportDescriptor struct {
 	Collections []Collection
 }
 
-func (r ReportDescriptor) GetInputReports() []Report {
-	itemMap := make(map[uint8][]DataItem)
-	for _, collection := range r.Collections {
-		for _, report := range collection.GetInputReport() {
-			itemMap[report.ID] = append(itemMap[report.ID], report.Items...)
-		}
-	}
-	reports := make([]Report, 0, len(itemMap))
-	for id, items := range itemMap {
-		reports = append(reports, Report{
-			ID:    id,
-			Items: items,
-		})
-	}
-	return reports
-}
-
-func (r ReportDescriptor) GetInputDataItems() map[uint8][]DataItem {
-	itemMap := make(map[uint8][]DataItem)
-	for _, collection := range r.Collections {
-		for reportID, items := range collection.GetInputDataItems() {
-			itemMap[reportID] = append(itemMap[reportID], items...)
-		}
-	}
-	return itemMap
-}
-
-func (r ReportDescriptor) GetOutputDataItems() map[uint8][]DataItem {
-	itemMap := make(map[uint8][]DataItem)
-	for _, collection := range r.Collections {
-		for reportID, items := range collection.GetOutputDataItems() {
-			itemMap[reportID] = append(itemMap[reportID], items...)
-		}
-	}
-	return itemMap
-}
-
-func (r ReportDescriptor) GetInputReport(reportID uint8) (Report, bool) {
-	for _, collection := range r.Collections {
-		for _, report := range collection.GetInputReport() {
-			if report.ID == reportID {
-				return report, true
-			}
-		}
-	}
-	return Report{}, false
-}
-
-func (r ReportDescriptor) HasReportID() bool {
-	for _, collection := range r.Collections {
-		if collection.HasReportID() {
-			return true
-		}
-	}
-	return false
-}
-
 func (r ReportDescriptor) MaxReportSize() int {
 	maxSize := 0
 	for _, collection := range r.Collections {
@@ -97,71 +40,6 @@ type Collection struct {
 	Items []MainItem
 }
 
-type Report struct {
-	ID    uint8
-	Items []DataItem
-}
-
-// GetInputReport returns a list of reports that are defined in the collection.
-func (c Collection) GetInputReport() []Report {
-	itemMap := make(map[uint8][]DataItem)
-	for _, item := range c.Items {
-		if item.Type != MainItemTypeInput {
-			continue
-		}
-		itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
-		if item.Collection != nil {
-			for _, report := range item.Collection.GetInputReport() {
-				itemMap[report.ID] = append(itemMap[report.ID], report.Items...)
-			}
-		}
-	}
-	reports := make([]Report, 0, len(itemMap))
-	for id, items := range itemMap {
-		reports = append(reports, Report{
-			ID:    id,
-			Items: items,
-		})
-	}
-	return reports
-}
-
-func (c Collection) GetInputDataItems() map[uint8][]DataItem {
-	itemMap := make(map[uint8][]DataItem)
-	for _, item := range c.Items {
-		if item.Collection != nil {
-			dataItems := item.Collection.GetInputDataItems()
-			for reportID, items := range dataItems {
-				itemMap[reportID] = append(itemMap[reportID], items...)
-			}
-			continue
-		}
-		if item.Type != MainItemTypeInput {
-			continue
-		}
-		itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
-	}
-	return itemMap
-}
-
-func (c Collection) GetOutputDataItems() map[uint8][]DataItem {
-	itemMap := make(map[uint8][]DataItem)
-	for _, item := range c.Items {
-		if item.Collection != nil {
-			items := item.Collection.GetOutputDataItems()
-			for reportID, dataItems := range items {
-				itemMap[reportID] = append(itemMap[reportID], dataItems...)
-			}
-			continue
-		}
-		if item.Type != MainItemTypeOutput && item.Type != MainItemTypeFeature {
-			continue
-		}
-		itemMap[item.DataItem.ReportID] = append(itemMap[item.DataItem.ReportID], *item.DataItem)
-	}
-	return itemMap
-}
-
 func (c Collection) MaxReportSize() int {
 	size := 0
 	for _, item := range c.Items {
@@ -173,18 +51,6 @@ func (c Collection) MaxReportSize() int {
 		}
 	}
 	return size
-}
-
-func (c Collection) HasReportID() bool {
-	for _, item := range c.Items {
-		if item.DataItem != nil && item.DataItem.ReportID != 0 {
-			return true
-		}
-		if item.Collection != nil && item.Collection.HasReportID() {
-			return true
-		}
-	}
-	return false
 }
 
 type DataFlags uint32
@@ -304,4 +170,76 @@ func (u Usage) Page() uint16 {
 
 func (u Usage) UsageID() uint16 {
 	return uint16(u)
+}
+
+func (r ReportDescriptor) Clone() ReportDescriptor {
+	collections := make([]Collection, len(r.Collections))
+	for i, c := range r.Collections {
+		items := make([]MainItem, len(c.Items))
+		for j, item := range c.Items {
+			if item.DataItem != nil {
+				dataItem := *item.DataItem
+				items[j] = MainItem{
+					Type:     item.Type,
+					DataItem: &dataItem,
+				}
+			}
+			if item.Collection != nil {
+				collection := item.Collection.Clone()
+				items[j] = MainItem{
+					Type:       item.Type,
+					Collection: &collection,
+				}
+			}
+		}
+		collections[i] = Collection{
+			Type:  c.Type,
+			Items: items,
+		}
+	}
+	return ReportDescriptor{
+		Collections: collections,
+	}
+}
+
+func (c Collection) Clone() Collection {
+	items := make([]MainItem, len(c.Items))
+	for i, item := range c.Items {
+		if item.DataItem != nil {
+			dataItem := *item.DataItem
+			items[i] = MainItem{
+				Type:     item.Type,
+				DataItem: &dataItem,
+			}
+		}
+		if item.Collection != nil {
+			collection := item.Collection.Clone()
+			items[i] = MainItem{
+				Type:       item.Type,
+				Collection: &collection,
+			}
+		}
+	}
+	return Collection{
+		Type:  c.Type,
+		Items: items,
+	}
+
+}
+
+func (c Collection) Walk(fn func(item MainItem) bool) {
+	for _, item := range c.Items {
+		if !fn(item) {
+			return
+		}
+		if item.Collection != nil {
+			item.Collection.Walk(fn)
+		}
+	}
+}
+
+func (r ReportDescriptor) Walk(fn func(item MainItem) bool) {
+	for _, c := range r.Collections {
+		c.Walk(fn)
+	}
 }

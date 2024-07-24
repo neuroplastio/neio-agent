@@ -61,9 +61,10 @@ func (g *InputNode) Configure(c flowapi.NodeConfigurator) error {
 		return fmt.Errorf("failed to decode HID report descriptor: %w", err)
 	}
 	g.dev = dev
-	g.decoder = hidapi.NewInputReportDecoder(desc)
-	g.source = hidapi.NewEventSource(g.log.Named("source"), desc.GetInputDataItems())
-	g.sink = hidapi.NewEventSink(g.log.Named("sink"), desc.GetOutputDataItems())
+	itemSet := hidapi.NewDataItemSet(desc)
+	g.decoder = hidapi.NewReportDecoder(itemSet.WithType(hiddesc.MainItemTypeInput))
+	g.source = hidapi.NewEventSource(g.log.Named("source"), itemSet.WithType(hiddesc.MainItemTypeInput))
+	g.sink = hidapi.NewEventSink(g.log.Named("sink"), itemSet.WithType(hiddesc.MainItemTypeOutput))
 	return nil
 }
 

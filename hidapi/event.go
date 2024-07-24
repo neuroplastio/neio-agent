@@ -51,7 +51,6 @@ func (h *Event) addUsage(diff UsageEvent) {
 func (h *Event) removeUsage(usage Usage) {
 	idx, ok := h.usageMap[usage]
 	if !ok {
-		h.mu.Unlock()
 		return
 	}
 	last := len(h.usages) - 1

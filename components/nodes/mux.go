@@ -206,6 +206,7 @@ func (r *Mux) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) e
 				if usage.Activate == nil {
 					continue
 				}
+				// TODO: improve this part / reuse some parts from `bind.go`
 				if *usage.Activate {
 					if prev, ok := r.activatedUsages[usage.Usage]; ok && prev != currentRoute {
 						ev, ok := deactEvents[prev]

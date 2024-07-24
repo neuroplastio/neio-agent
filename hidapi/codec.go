@@ -1,30 +1,24 @@
 package hidapi
 
 import (
-	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
 	"github.com/neuroplastio/neuroplastio/pkg/bits"
 )
 
 type ReportDecoder struct {
-	dataItems map[uint8][]hiddesc.DataItem
+	dataItems DataItemSet
 }
 
-func NewInputReportDecoder(desc hiddesc.ReportDescriptor) *ReportDecoder {
-	return &ReportDecoder{dataItems: desc.GetInputDataItems()}
-}
-
-func NewOutputReportDecoder(desc hiddesc.ReportDescriptor) *ReportDecoder {
-	return &ReportDecoder{dataItems: desc.GetOutputDataItems()}
+func NewReportDecoder(dataItems DataItemSet) *ReportDecoder {
+	return &ReportDecoder{dataItems: dataItems}
 }
 
 func (r *ReportDecoder) Decode(data []byte) (Report, bool) {
 	reportID := uint8(0)
-	hasReportID := len(r.dataItems) > 1
-	if hasReportID {
+	if r.dataItems.HasReportID() {
 		reportID = data[0]
 		data = data[1:]
 	}
-	items := r.dataItems[reportID]
+	items := r.dataItems.Report(reportID)
 	scanner := bits.NewScanner(data)
 	report := Report{
 		ID:     reportID,

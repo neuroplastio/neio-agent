@@ -69,16 +69,19 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 		if err != nil {
 			return fmt.Errorf("failed to decode HID report descriptor: %w", err)
 		}
-		for _, collection := range inputDesc.Collections {
-			ids := make(map[uint8]uint8)
-			reports := collection.GetInputReport()
-			for _, report := range reports {
-				ids[report.ID] = outputID
-				outputID++
-			}
-			collection = o.replaceIDs(ids, collection)
-			desc.Collections = append(desc.Collections, collection)
+		inputSet := hidapi.NewDataItemSet(inputDesc)
+		ids := make(map[uint8]uint8, len(inputSet.Reports()))
+		for _, rd := range inputSet.Reports() {
+			ids[rd.ID] = outputID
+			outputID++
 		}
+		inputDesc.Walk(func(item hiddesc.MainItem) bool {
+			if item.DataItem != nil {
+				item.DataItem.ReportID = ids[item.DataItem.ReportID]
+			}
+			return true
+		})
+		desc.Collections = append(desc.Collections, inputDesc.Collections...)
 	}
 	descRaw, err := hiddesc.Encode(desc)
 	if err != nil {
@@ -86,40 +89,11 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 	}
 	o.descRaw = descRaw
 	o.dev = dev
-	o.decoder = hidapi.NewOutputReportDecoder(desc)
-	o.source = hidapi.NewEventSource(o.log.Named("source"), desc.GetOutputDataItems())
-	o.sink = hidapi.NewEventSink(o.log.Named("sink"), desc.GetInputDataItems())
+	itemSet := hidapi.NewDataItemSet(desc)
+	o.decoder = hidapi.NewReportDecoder(itemSet.WithType(hiddesc.MainItemTypeOutput))
+	o.source = hidapi.NewEventSource(o.log.Named("source"), itemSet.WithType(hiddesc.MainItemTypeOutput))
+	o.sink = hidapi.NewEventSink(o.log.Named("sink"), itemSet.WithType(hiddesc.MainItemTypeInput))
 	return nil
-}
-
-func (o *OutputNode) replaceIDs(ids map[uint8]uint8, collection hiddesc.Collection) hiddesc.Collection {
-	collectionCopy := hiddesc.Collection{
-		UsagePage: collection.UsagePage,
-		UsageID:   collection.UsageID,
-		Type:      collection.Type,
-	}
-	for _, item := range collection.Items {
-		itemCopy := hiddesc.MainItem{
-			Type: item.Type,
-		}
-		if item.Collection != nil {
-			itemCopy.Collection = &(*item.Collection)
-		}
-		if item.DataItem != nil {
-			itemCopy.DataItem = &(*item.DataItem)
-		}
-		if itemCopy.Collection != nil {
-			cc := o.replaceIDs(ids, *itemCopy.Collection)
-			itemCopy.Collection = &cc
-		}
-		if itemCopy.DataItem != nil {
-			if newID, ok := ids[itemCopy.DataItem.ReportID]; ok {
-				itemCopy.DataItem.ReportID = newID
-			}
-		}
-		collectionCopy.Items = append(collectionCopy.Items, itemCopy)
-	}
-	return collectionCopy
 }
 
 func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) error {

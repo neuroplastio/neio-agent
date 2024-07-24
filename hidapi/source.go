@@ -1,21 +1,20 @@
 package hidapi
 
 import (
-	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
 	"github.com/neuroplastio/neuroplastio/pkg/bits"
 	"go.uber.org/zap"
 )
 
 type EventSource struct {
 	log         *zap.Logger
-	dataItems   map[uint8][]hiddesc.DataItem
+	dataItems   DataItemSet
 	usageSets   map[uint8]map[int]UsageSet
 	usageValues map[uint8]map[int]UsageValues
 
 	reports map[uint8]Report
 }
 
-func NewEventSource(log *zap.Logger, dataItems map[uint8][]hiddesc.DataItem) *EventSource {
+func NewEventSource(log *zap.Logger, dataItems DataItemSet) *EventSource {
 	rte := &EventSource{
 		log:         log,
 		dataItems:   dataItems,
@@ -28,31 +27,32 @@ func NewEventSource(log *zap.Logger, dataItems map[uint8][]hiddesc.DataItem) *Ev
 }
 
 func (r *EventSource) initializeStates() {
-	for reportID, items := range r.dataItems {
+	for _, rd := range r.dataItems.Reports() {
 		report := Report{
-			ID:     reportID,
-			Fields: make([]bits.Bits, len(items)),
+			ID:     rd.ID,
+			Fields: make([]bits.Bits, len(rd.DataItems)),
 		}
-		for i, item := range items {
+		for i, item := range rd.DataItems {
 			// TODO: support empty dynamic arrays
 			// TODO: support correct const values (when handling first report)
 			report.Fields[i] = bits.NewZeros(int(item.ReportCount * item.ReportSize))
 		}
-		r.reports[reportID] = report
-		r.usageSets[reportID] = NewUsageSets(items)
-		r.usageValues[reportID] = NewUsageValuesItems(items)
+		r.reports[rd.ID] = report
+		r.usageSets[rd.ID] = NewUsageSets(rd.DataItems)
+		r.usageValues[rd.ID] = NewUsageValuesItems(rd.DataItems)
 	}
 }
 
 func (r *EventSource) OnReport(report Report) *Event {
 	lastReport := r.reports[report.ID]
-	if len(report.Fields) != len(r.dataItems[report.ID]) {
+	dataItems := r.dataItems.Report(report.ID)
+	if len(report.Fields) != len(dataItems) {
 		r.log.Error("report field count mismatch")
 		return NewEvent()
 	}
 
 	event := NewEvent()
-	for i, item := range r.dataItems[report.ID] {
+	for i, item := range dataItems {
 		if item.Flags.IsConstant() {
 			continue
 		}
@@ -89,7 +89,7 @@ func (r *EventSource) OnReport(report Report) *Event {
 }
 
 func (r *EventSource) stripRelativeValues(report Report) Report {
-	for i, item := range r.dataItems[report.ID] {
+	for i, item := range r.dataItems.Report(report.ID) {
 		if item.Flags.IsRelative() {
 			report.Fields[i].ClearAll()
 		}

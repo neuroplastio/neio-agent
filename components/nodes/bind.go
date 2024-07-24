@@ -36,12 +36,11 @@ type Bind struct {
 }
 
 type bindItem struct {
-	trigger   []hidapi.Usage
-	handler   flowapi.ActionHandler
-	triggered map[int]struct{}
+	trigger trigger
+	handler flowapi.ActionHandler
 
-	isTriggered bool
-	finalize    flowapi.ActionFinalizer
+	triggered bool
+	finalizer flowapi.ActionFinalizer
 }
 
 func (b *Bind) Configure(c flowapi.NodeConfigurator) error {
@@ -61,9 +60,8 @@ func (b *Bind) Configure(c flowapi.NodeConfigurator) error {
 			return fmt.Errorf("failed to create action handler for %s %s: %w", item.UsageString, item.StatementString, err)
 		}
 		b.mappings = append(b.mappings, bindItem{
-			trigger:   usages,
-			handler:   handler,
-			triggered: make(map[int]struct{}),
+			trigger: newUsageActivation(usages),
+			handler: handler,
 		})
 	}
 	return nil
@@ -110,32 +108,57 @@ func (b *Bind) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) 
 }
 
 func (b *Bind) triggerMappings(ac flowapi.ActionContext) {
-	am := b.mappings
-	event := ac.HIDEvent()
-	for mappingIdx, mapping := range b.mappings {
-		for usageIdx, usage := range mapping.trigger {
-			usageEvent, ok := event.Usage(usage)
-			if !ok || usageEvent.Activate == nil {
-				continue
+	m := b.mappings
+	for idx, mapping := range m {
+		isTriggered := mapping.trigger.Check(ac)
+		switch {
+		case isTriggered && !mapping.triggered:
+			m[idx].triggered = true
+			m[idx].finalizer = mapping.handler(ac)
+		case !isTriggered && mapping.triggered:
+			if mapping.finalizer != nil {
+				m[idx].finalizer(ac)
 			}
-			event.Suppress(usage)
-			if *usageEvent.Activate {
-				am[mappingIdx].triggered[usageIdx] = struct{}{}
-			} else {
-				delete(am[mappingIdx].triggered, usageIdx)
-			}
+			m[idx].triggered = false
+			m[idx].finalizer = nil
 		}
-		isTriggered := len(am[mappingIdx].triggered) == len(am[mappingIdx].trigger)
-		if isTriggered && !mapping.isTriggered {
-			am[mappingIdx].isTriggered = true
-			am[mappingIdx].finalize = mapping.handler(ac)
+	}
+}
+
+type trigger interface {
+	Check(ac flowapi.ActionContext) bool
+}
+
+func newUsageActivation(usages []hidapi.Usage) trigger {
+	return &usageActivation{
+		usages:   usages,
+		counters: make(map[hidapi.Usage]int),
+	}
+}
+
+type usageActivation struct {
+	usages   []hidapi.Usage
+	counters map[hidapi.Usage]int
+}
+
+func (u *usageActivation) Check(ac flowapi.ActionContext) bool {
+	for _, usage := range u.usages {
+		usageEvent, ok := ac.HIDEvent().Usage(usage)
+		if !ok || usageEvent.Activate == nil {
+			continue
 		}
-		if !isTriggered && mapping.isTriggered {
-			am[mappingIdx].isTriggered = false
-			if mapping.finalize != nil {
-				am[mappingIdx].finalize(ac)
-				am[mappingIdx].finalize = nil
+		if *usageEvent.Activate {
+			u.counters[usage]++
+		} else {
+			u.counters[usage]--
+			if u.counters[usage] <= 0 {
+				delete(u.counters, usage)
 			}
 		}
 	}
+	if len(u.counters) == len(u.usages) {
+		ac.HIDEvent().Suppress(u.usages...)
+		return true
+	}
+	return false
 }

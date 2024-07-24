@@ -11,7 +11,7 @@ import (
 
 type EventSink struct {
 	log         *zap.Logger
-	dataItems   map[uint8][]hiddesc.DataItem
+	dataItems   DataItemSet
 	usageSets   map[uint8]map[int]UsageSet
 	usageValues map[uint8]map[int]UsageValues
 
@@ -39,7 +39,7 @@ type itemAddress struct {
 	itemIdx  int
 }
 
-func NewEventSink(log *zap.Logger, dataItems map[uint8][]hiddesc.DataItem) *EventSink {
+func NewEventSink(log *zap.Logger, dataItems DataItemSet) *EventSink {
 	etr := &EventSink{
 		log:              log,
 		dataItems:        dataItems,
@@ -55,27 +55,27 @@ func NewEventSink(log *zap.Logger, dataItems map[uint8][]hiddesc.DataItem) *Even
 }
 
 func (t *EventSink) initializeStates() {
-	for reportID, items := range t.dataItems {
+	for _, rd := range t.dataItems.Reports() {
 		report := Report{
-			ID:     reportID,
-			Fields: make([]bits.Bits, len(items)),
+			ID:     rd.ID,
+			Fields: make([]bits.Bits, len(rd.DataItems)),
 		}
-		for i, item := range items {
+		for i, item := range rd.DataItems {
 			// TODO: support empty dynamic arrays
 			// TODO: support const values (from first HIDState)
 			report.Fields[i] = bits.NewZeros(int(item.ReportCount * item.ReportSize))
 			t.log.Debug("DataItem",
-				zap.Uint8("reportId", reportID),
+				zap.Uint8("reportId", rd.ID),
 				zap.Any("usagePage", item.UsagePage),
 				zap.Any("usageMinimum", item.UsageMinimum),
 				zap.Any("usageMaximum", item.UsageMaximum),
 			)
 		}
-		t.reports[reportID] = report
-		t.usageSets[reportID] = NewUsageSets(items)
-		for idx, usageSet := range t.usageSets[reportID] {
+		t.reports[rd.ID] = report
+		t.usageSets[rd.ID] = NewUsageSets(rd.DataItems)
+		for idx, usageSet := range t.usageSets[rd.ID] {
 			t.log.Debug("Usage Set",
-				zap.Uint8("reportId", reportID),
+				zap.Uint8("reportId", rd.ID),
 				zap.Int("itemIdx", idx),
 				zap.String("page", fmt.Sprintf("%02x", usageSet.UsagePage())),
 				zap.Any("min", usageSet.UsageMinimum()),
@@ -84,28 +84,28 @@ func (t *EventSink) initializeStates() {
 			rang := usageRange{
 				start:    usageSet.UsageMinimum(),
 				end:      usageSet.UsageMaximum(),
-				addr:     itemAddress{reportID: reportID, itemIdx: idx},
-				dataItem: items[idx],
+				addr:     itemAddress{reportID: rd.ID, itemIdx: idx},
+				dataItem: rd.DataItems[idx],
 			}
 			t.usageSetRanges[usageSet.UsagePage()] = append(t.usageSetRanges[usageSet.UsagePage()], rang)
 		}
 
-		t.usageValues[reportID] = NewUsageValuesItems(items)
-		for idx, usageValue := range t.usageValues[reportID] {
+		t.usageValues[rd.ID] = NewUsageValuesItems(rd.DataItems)
+		for idx, usageValue := range t.usageValues[rd.ID] {
 			// TODO: handle overlapping usages
 			for _, usage := range usageValue.Usages() {
 				t.log.Debug("Usage Value",
-					zap.Uint8("reportId", reportID),
+					zap.Uint8("reportId", rd.ID),
 					zap.Int("itemIdx", idx),
 					zap.String("usage", usage.String()),
 				)
 				t.usageValuesIndex[usage] = itemAddress{
-					reportID: reportID,
+					reportID: rd.ID,
 					itemIdx:  idx,
 				}
 			}
 		}
-		t.usageActivations[reportID] = make(map[Usage]int)
+		t.usageActivations[rd.ID] = make(map[Usage]int)
 	}
 	for usagePage, items := range t.usageSetRanges {
 		slices.SortFunc(items, func(a, b usageRange) int {
@@ -181,7 +181,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 			continue
 		}
 		report := getReport(addr.reportID)
-		dataItem := t.dataItems[addr.reportID][addr.itemIdx]
+		dataItem := t.dataItems.Report(addr.reportID)[addr.itemIdx]
 		switch {
 		case usageEvent.Activate != nil && *usageEvent.Activate:
 			if dataItem.Flags.IsRelative() {
@@ -217,7 +217,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 }
 
 func (t *EventSink) stripRelativeValues(report Report) Report {
-	for i, item := range t.dataItems[report.ID] {
+	for i, item := range t.dataItems.Report(report.ID) {
 		if item.Flags.IsRelative() {
 			report.Fields[i].ClearAll()
 		}
