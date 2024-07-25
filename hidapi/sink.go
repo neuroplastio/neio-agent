@@ -3,6 +3,7 @@ package hidapi
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
 	"github.com/neuroplastio/neuroplastio/pkg/bits"
@@ -19,7 +20,9 @@ type EventSink struct {
 	usageValuesIndex map[Usage]itemAddress
 	reports          map[uint8]Report
 
-	usageActivations map[uint8]map[Usage]int
+	usageActivations      map[uint8]map[Usage]int
+	lastActivation        time.Time
+	activationMinInterval time.Duration
 }
 
 type usageRange struct {
@@ -41,14 +44,15 @@ type itemAddress struct {
 
 func NewEventSink(log *zap.Logger, dataItems DataItemSet) *EventSink {
 	etr := &EventSink{
-		log:              log,
-		dataItems:        dataItems,
-		usageSets:        make(map[uint8]map[int]UsageSet),
-		usageValues:      make(map[uint8]map[int]UsageValues),
-		usageSetRanges:   make(map[uint16][]usageRange),
-		usageValuesIndex: make(map[Usage]itemAddress),
-		reports:          make(map[uint8]Report),
-		usageActivations: make(map[uint8]map[Usage]int),
+		log:                   log,
+		dataItems:             dataItems,
+		usageSets:             make(map[uint8]map[int]UsageSet),
+		usageValues:           make(map[uint8]map[int]UsageValues),
+		usageSetRanges:        make(map[uint16][]usageRange),
+		usageValuesIndex:      make(map[Usage]itemAddress),
+		reports:               make(map[uint8]Report),
+		usageActivations:      make(map[uint8]map[Usage]int),
+		activationMinInterval: time.Millisecond,
 	}
 	etr.initializeStates()
 	return etr
@@ -191,6 +195,14 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 				count := t.usageActivations[addr.reportID][usage]
 				if count == 1 {
 					t.usageSets[addr.reportID][addr.itemIdx].SetUsage(report.Fields[addr.itemIdx], usage)
+					// TODO: configurable minInterval with 1ms by default
+					// TODO: non-blocking rate limiting
+					sinceLast := time.Since(t.lastActivation)
+					if sinceLast < t.activationMinInterval {
+						t.log.Info("Activation rate limit")
+						time.Sleep(t.activationMinInterval - sinceLast)
+					}
+					t.lastActivation = time.Now()
 				}
 			}
 		case usageEvent.Activate != nil && !*usageEvent.Activate:

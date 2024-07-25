@@ -34,33 +34,13 @@ func (a TapHold) CreateHandler(p flowapi.ActionProvider) (flowapi.ActionHandler,
 
 func NewActionTapHoldHandler(ctx context.Context, onTap flowapi.ActionHandler, onHold flowapi.ActionHandler, delay time.Duration, tapDuration time.Duration, interrupt bool) flowapi.ActionHandler {
 	return func(ac flowapi.ActionContext) flowapi.ActionFinalizer {
-		interruptCh := make(chan struct{})
 		return ac.Async(func(async flowapi.AsyncActionContext) {
-			stopCapturing := async.Capture(func(ac flowapi.ActionContext) bool {
-				for _, u := range ac.HIDEvent().Usages() {
-					if u.Activate != nil && *u.Activate {
-						fmt.Println("interrupt")
-						select {
-						case interruptCh <- struct{}{}:
-						default:
-						}
-						return true
-					}
-				}
-				return false
-			})
 			select {
-			case <-interruptCh:
-				fmt.Println("start holding")
-				fin := async.Action(onHold)
-				fmt.Println("stop capturing")
-				stopCapturing()
-				async.OnFinish(fin)
-			case <-async.After(delay):
-				stopCapturing()
-				// hold action
+			case <-async.Interrupt():
 				async.OnFinish(async.Action(onHold))
-			case <-async.Done():
+			case <-async.After(delay):
+				async.OnFinish(async.Action(onHold))
+			case <-async.Finished():
 				fin := async.Action(onTap)
 				<-async.After(tapDuration)
 				async.Finish(fin)

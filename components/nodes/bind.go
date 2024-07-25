@@ -85,20 +85,12 @@ func (b *Bind) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) 
 	}()
 	for {
 		select {
-		case ac := <-actionPool.Flush():
-			event := ac.HIDEvent()
-			b.triggerMappings(ac)
-			if !event.IsEmpty() {
-				sendCh <- event
-			}
 		case ev := <-in:
 			event := ev.HID
 			ac := actionPool.New(event)
-			if actionPool.TryCapture(ac) {
-				continue
-			}
 			b.triggerMappings(ac)
 			if !event.IsEmpty() {
+				actionPool.Interrupt()
 				sendCh <- event
 			}
 		case <-ctx.Done():

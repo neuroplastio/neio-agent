@@ -41,22 +41,6 @@ type ActionContext interface {
 	Async(fn func(asyncCtx AsyncActionContext)) ActionFinalizer
 }
 
-type AsyncActionContext interface {
-	// Done returns a channel that will be closed when the action is finished.
-	Done() <-chan struct{}
-
-	Capture(fn func(ac ActionContext) bool) func()
-
-	// After returns a channel that will be closed after the specified duration.
-	After(duration time.Duration) <-chan time.Time
-
-	Do(fn func(ac ActionContext))
-
-	Action(action ActionHandler) ActionFinalizer
-	Finish(finalizer ActionFinalizer)
-	OnFinish(finalizer ActionFinalizer)
-}
-
 type ActionFinalizer func(ac ActionContext)
 type ActionHandler func(ac ActionContext) ActionFinalizer
 type SignalHandler func(ctx context.Context)
@@ -106,9 +90,20 @@ func (a *actionContext) clone() *actionContext {
 
 // TODO: clean up and refactor this mess, fix data races
 
+type AsyncActionContext interface {
+	Interrupt() <-chan struct{}
+	After(duration time.Duration) <-chan struct{}
+	Finished() <-chan struct{}
+	Do(fn func(ac ActionContext))
+	Action(action ActionHandler) ActionFinalizer
+	Finish(finalizer ActionFinalizer)
+	OnFinish(finalizer ActionFinalizer)
+}
+
 type asyncActionContext struct {
 	ac             *actionContext
-	capture        func(ac ActionContext) bool
+	interrupt      chan struct{}
+	finished       chan struct{}
 	done           chan struct{}
 	onFinish       []ActionFinalizer
 	capturedUsages map[hidapi.Usage]struct{}
@@ -117,11 +112,10 @@ type asyncActionContext struct {
 
 func NewActionContextPool(ctx context.Context, log *zap.Logger, hidChan chan<- *hidapi.Event) *ActionContextPool {
 	pool := &ActionContextPool{
-		ctx:       ctx,
-		log:       log,
-		capturers: make(map[*asyncActionContext]func(ac ActionContext) bool),
-		hidChan:   hidChan,
-		flush:     make(chan ActionContext, 64),
+		ctx:            ctx,
+		log:            log,
+		hidChan:        hidChan,
+		activeContexts: make(map[*asyncActionContext]struct{}),
 	}
 	return pool
 }
@@ -130,10 +124,9 @@ type ActionContextPool struct {
 	log     *zap.Logger
 	ctx     context.Context
 	hidChan chan<- *hidapi.Event
-	flush   chan ActionContext
 
-	mu        sync.Mutex
-	capturers map[*asyncActionContext]func(ac ActionContext) bool
+	mu             sync.Mutex
+	activeContexts map[*asyncActionContext]struct{}
 }
 
 func (a *ActionContextPool) New(event *hidapi.Event) ActionContext {
@@ -144,79 +137,67 @@ func (a *ActionContextPool) New(event *hidapi.Event) ActionContext {
 	return ac
 }
 
-func (a *ActionContextPool) TryCapture(ac ActionContext) bool {
+func (a *ActionContextPool) Interrupt() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	for async, capturer := range a.capturers {
-		for _, usage := range ac.HIDEvent().Usages() {
-			if _, ok := async.capturedUsages[usage.Usage]; ok {
-				a.log.Debug("captured usages", zap.Any("usages", ac.HIDEvent().Usages()))
-				async.captured <- ac
-				return true
-			}
-		}
-		if capturer != nil && capturer(ac) {
-			a.log.Debug("captured", zap.Any("usages", ac.HIDEvent().Usages()))
-			for _, usage := range ac.HIDEvent().Usages() {
-				async.capturedUsages[usage.Usage] = struct{}{}
-			}
-			async.captured <- ac
-			return true
+	for ac := range a.activeContexts {
+		if ac.interrupt != nil {
+			close(ac.interrupt)
 		}
 	}
-	return false
-}
-
-func (a *ActionContextPool) Flush() <-chan ActionContext {
-	return a.flush
+	for ac := range a.activeContexts {
+		if ac.interrupt != nil {
+			select {
+			case <-ac.done:
+			case <-a.ctx.Done():
+			}
+		}
+		ac.interrupt = nil
+	}
+	a.mu.Unlock()
 }
 
 func (a *ActionContextPool) runAsync(ac *actionContext, fn func(ac AsyncActionContext)) ActionFinalizer {
 	asyncCtx := &asyncActionContext{
-		ac:             ac,
-		done:           make(chan struct{}),
-		capturedUsages: make(map[hidapi.Usage]struct{}),
-		captured:       make(chan ActionContext, 64),
+		ac:       ac,
+		finished: make(chan struct{}),
+		done:     make(chan struct{}),
 	}
+	a.mu.Lock()
+	a.activeContexts[asyncCtx] = struct{}{}
+	a.mu.Unlock()
 	go func() {
-		for captured := range asyncCtx.captured {
-			time.Sleep(1 * time.Millisecond)
-			a.flush <- captured
-		}
+		defer close(asyncCtx.done)
+		fn(asyncCtx)
 	}()
-	go fn(asyncCtx)
-
 	return func(ac ActionContext) {
 		a.mu.Lock()
-		delete(a.capturers, asyncCtx)
+		delete(a.activeContexts, asyncCtx)
 		a.mu.Unlock()
 		for _, onFinish := range asyncCtx.onFinish {
 			onFinish(ac)
 		}
-		a.log.Debug("finalizer", zap.Any("usages", ac.HIDEvent().Usages()))
-		close(asyncCtx.done)
-		close(asyncCtx.captured)
+		close(asyncCtx.finished)
 	}
 }
 
-func (a *asyncActionContext) After(duration time.Duration) <-chan time.Time {
-	// TODO: pooling
-	return time.After(duration)
+func (a *asyncActionContext) After(duration time.Duration) <-chan struct{} {
+	ch := make(chan struct{})
+	go func() {
+		<-time.After(duration)
+		close(ch)
+	}()
+	return ch
 }
 
-func (a *asyncActionContext) Done() <-chan struct{} {
-	return a.done
+func (a *asyncActionContext) Finished() <-chan struct{} {
+	return a.finished
 }
 
-func (a *asyncActionContext) Capture(fn func(ac ActionContext) bool) func() {
-	a.ac.pool.mu.Lock()
-	a.ac.pool.capturers[a] = fn
-	a.ac.pool.mu.Unlock()
-	return func() {
-		a.ac.pool.mu.Lock()
-		a.ac.pool.capturers[a] = nil
-		a.ac.pool.mu.Unlock()
+func (a *asyncActionContext) Interrupt() <-chan struct{} {
+	if a.interrupt == nil {
+		a.interrupt = make(chan struct{})
 	}
+	return a.interrupt
 }
 
 func (a *asyncActionContext) NewActionContext() ActionContext {

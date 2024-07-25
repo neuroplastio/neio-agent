@@ -3,10 +3,10 @@ nodes:
     to: [test]
     input:
       addr: linux/3434:fe0e:0
-  - id: mouse
-    input:
-      addr: linux/046d:c547:0
-    to: [out]
+  # - id: mouse
+  #  input:
+  #    addr: linux/046d:c547:0
+  #  to: [out]
   - id: moonlander
     input:
       addr: linux/3297:1969:0
