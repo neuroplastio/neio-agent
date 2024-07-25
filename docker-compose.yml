@@ -8,6 +8,7 @@ services:
       - ./uhid.yml:/root/.config/neuroplastio/uhid.yml
       - /dev:/dev
       - /sys/devices:/sys/devices
+      - /run/udev/data:/run/udev/data
     device_cgroup_rules:
       - 'a 244:* rwm' # hidraw
       - 'a 239:* rwm' # uhid
