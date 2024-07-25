@@ -1,15 +1,12 @@
-name: build
+name: Build
 
 on:
   push:
     branches:
       - main
 
-env:
-  IMAGE_NAME: neuroplastio/neio-agent
-
 jobs:
-  buildx:
+  docker-image:
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -33,7 +30,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ env.IMAGE_NAME }}
+          images: ghcr.io/${{ github.repository }}
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
