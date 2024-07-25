@@ -1,0 +1,15 @@
+services:
+  neio-agent:
+    image: ghcr.io/neuroplastio/neio-agent:test
+    container_name: neio-agent
+    volumes:
+      - ./data:/root/.config/neuroplastio/data
+      - ./flow.yml:/root/.config/neuroplastio/flow.yml
+      - ./uhid.yml:/root/.config/neuroplastio/uhid.yml
+      - /dev:/dev
+      - /sys/devices:/sys/devices
+    device_cgroup_rules:
+      - 'a 244:* rwm' # hidraw
+      - 'a 239:* rwm' # uhid
+    command:
+      - run

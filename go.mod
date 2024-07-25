@@ -27,14 +27,13 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/openstadia/go-usb-gadget => ../go-usb-gadget
-
 require (
 	github.com/alecthomas/participle/v2 v2.1.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/citilinkru/libudev v1.0.0
 	github.com/dgraph-io/badger v1.6.2
 	github.com/iancoleman/strcase v0.3.0
+	github.com/karalabe/hid v1.0.0
 	github.com/openstadia/go-usb-gadget v0.0.0-20231115171102-aebd56bbb965
 	github.com/psanford/uhid v0.0.0-20210516231035-a7c1e481958d
 	github.com/puzpuzpuz/xsync/v3 v3.1.0
