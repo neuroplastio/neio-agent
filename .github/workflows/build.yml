@@ -33,6 +33,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
       - name: Build and push
         uses: docker/build-push-action@v6
+        id: push
         with:
           context: .
           push: true
@@ -41,3 +42,10 @@ jobs:
           provenance: mode=max
           sbom: true
           platforms: linux/amd64,linux/aarch64
+      - name: Attest
+        uses: actions/attest-build-provenance@v1
+        id: attest
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
