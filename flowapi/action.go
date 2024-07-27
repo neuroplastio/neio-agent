@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/hidapi"
+	"github.com/neuroplastio/neio-agent/hidapi"
 	"go.uber.org/zap"
 )
 

@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/neuroplastio/neuroplastio/pkg/usbhid/hiddesc"
+	"github.com/neuroplastio/neio-agent/pkg/usbhid/hiddesc"
 	gadget "github.com/openstadia/go-usb-gadget"
 	o "github.com/openstadia/go-usb-gadget/option"
 )
 
 type GadgetDriver struct {
-	mu sync.Mutex
+	mu  sync.Mutex
 	seq int
 }
 
@@ -34,12 +34,12 @@ func (d *GadgetDriver) Outputs() []Output {
 }
 
 type gadgetHandler struct {
-	path string
-	gadget *gadget.Gadget
-	config *gadget.Config
+	path        string
+	gadget      *gadget.Gadget
+	config      *gadget.Config
 	hidFunction *gadget.HidFunction
-	binding *gadget.Binding
-	rw io.ReadWriter
+	binding     *gadget.Binding
+	rw          io.ReadWriter
 }
 
 func (h *gadgetHandler) Close() error {
@@ -127,7 +127,7 @@ func (d *GadgetDriver) Open(id string, config OpenConfig) (Handler, error) {
 	})
 
 	h.binding = gadget.CreateBinding(h.config, h.hidFunction, h.hidFunction.Name())
-	
+
 	h.gadget.Enable(h.path)
 	h.rw, err = h.hidFunction.GetReadWriter()
 	if err != nil {

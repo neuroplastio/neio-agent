@@ -1,8 +1,8 @@
 package hidapi
 
 import (
-	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
-	"github.com/neuroplastio/neuroplastio/pkg/bits"
+	"github.com/neuroplastio/neio-agent/hidapi/hiddesc"
+	"github.com/neuroplastio/neio-agent/pkg/bits"
 )
 
 type UsageSet interface {

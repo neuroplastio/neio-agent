@@ -1,4 +1,4 @@
-module github.com/neuroplastio/neuroplastio
+module github.com/neuroplastio/neio-agent
 
 go 1.21.5
 

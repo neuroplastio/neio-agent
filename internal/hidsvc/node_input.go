@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/neuroplastio/neuroplastio/flowapi"
-	"github.com/neuroplastio/neuroplastio/hidapi"
-	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
+	"github.com/neuroplastio/neio-agent/flowapi"
+	"github.com/neuroplastio/neio-agent/hidapi"
+	"github.com/neuroplastio/neio-agent/hidapi/hiddesc"
 	"go.uber.org/zap"
 )
 

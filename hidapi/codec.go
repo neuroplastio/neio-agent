@@ -1,7 +1,7 @@
 package hidapi
 
 import (
-	"github.com/neuroplastio/neuroplastio/pkg/bits"
+	"github.com/neuroplastio/neio-agent/pkg/bits"
 )
 
 type ReportDecoder struct {

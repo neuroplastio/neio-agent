@@ -3,8 +3,8 @@ package hidusage
 import (
 	"fmt"
 
-	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
-	"github.com/neuroplastio/neuroplastio/hidapi/hidusage/usagepages"
+	"github.com/neuroplastio/neio-agent/hidapi/hiddesc"
+	"github.com/neuroplastio/neio-agent/hidapi/hidusage/usagepages"
 )
 
 type Key byte

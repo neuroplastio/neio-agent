@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/flowapi/flowdsl"
-	"github.com/neuroplastio/neuroplastio/hidapi"
+	"github.com/neuroplastio/neio-agent/flowapi/flowdsl"
+	"github.com/neuroplastio/neio-agent/hidapi"
 )
 
 type Arguments struct {

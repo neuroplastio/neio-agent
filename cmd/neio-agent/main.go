@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/neuroplastio/neuroplastio/pkg/agent/agentcli"
+	"github.com/neuroplastio/neio-agent/pkg/agent/agentcli"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/flowapi"
+	"github.com/neuroplastio/neio-agent/flowapi"
 )
 
 type Tap struct{}

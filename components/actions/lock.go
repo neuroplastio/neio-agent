@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"github.com/neuroplastio/neuroplastio/flowapi"
+	"github.com/neuroplastio/neio-agent/flowapi"
 )
 
 type Lock struct{}

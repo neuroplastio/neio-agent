@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
-	"github.com/neuroplastio/neuroplastio/pkg/bits"
+	"github.com/neuroplastio/neio-agent/hidapi/hiddesc"
+	"github.com/neuroplastio/neio-agent/pkg/bits"
 	"go.uber.org/zap"
 )
 
@@ -214,6 +214,14 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 				if count <= 0 {
 					t.usageSets[addr.reportID][addr.itemIdx].ClearUsage(report.Fields[addr.itemIdx], usage)
 					delete(t.usageActivations[addr.reportID], usage)
+					// TODO: configurable minInterval with 1ms by default
+					// TODO: non-blocking rate limiting
+					sinceLast := time.Since(t.lastActivation)
+					if sinceLast < t.activationMinInterval {
+						t.log.Info("Activation rate limit")
+						time.Sleep(t.activationMinInterval - sinceLast)
+					}
+					t.lastActivation = time.Now()
 				}
 			}
 		case usageEvent.Value != nil:

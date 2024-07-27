@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
-	"github.com/neuroplastio/neuroplastio/flowapi"
-	"github.com/neuroplastio/neuroplastio/pkg/bus"
+	"github.com/neuroplastio/neio-agent/flowapi"
+	"github.com/neuroplastio/neio-agent/pkg/bus"
 	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"

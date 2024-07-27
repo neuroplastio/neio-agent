@@ -1,6 +1,6 @@
 package actions
 
-import "github.com/neuroplastio/neuroplastio/flowapi"
+import "github.com/neuroplastio/neio-agent/flowapi"
 
 func Register(reg flowapi.Registry) {
 	reg.MustRegisterAction(None{})

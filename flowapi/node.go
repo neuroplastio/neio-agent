@@ -3,7 +3,7 @@ package flowapi
 import (
 	"context"
 
-	"github.com/neuroplastio/neuroplastio/flowapi/flowdsl"
+	"github.com/neuroplastio/neio-agent/flowapi/flowdsl"
 )
 
 type NodeLinkType int

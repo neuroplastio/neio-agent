@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/flowapi"
-	"github.com/neuroplastio/neuroplastio/internal/configsvc"
-	"github.com/neuroplastio/neuroplastio/pkg/bus"
+	"github.com/neuroplastio/neio-agent/flowapi"
+	"github.com/neuroplastio/neio-agent/internal/configsvc"
+	"github.com/neuroplastio/neio-agent/pkg/bus"
 	"go.uber.org/zap"
 )
 

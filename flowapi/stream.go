@@ -3,7 +3,7 @@ package flowapi
 import (
 	"context"
 
-	"github.com/neuroplastio/neuroplastio/hidapi"
+	"github.com/neuroplastio/neio-agent/hidapi"
 )
 
 type Event struct {

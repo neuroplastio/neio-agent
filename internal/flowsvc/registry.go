@@ -3,9 +3,9 @@ package flowsvc
 import (
 	"fmt"
 
-	"github.com/neuroplastio/neuroplastio/flowapi"
-	"github.com/neuroplastio/neuroplastio/flowapi/flowdsl"
-	"github.com/neuroplastio/neuroplastio/pkg/registry"
+	"github.com/neuroplastio/neio-agent/flowapi"
+	"github.com/neuroplastio/neio-agent/flowapi/flowdsl"
+	"github.com/neuroplastio/neio-agent/pkg/registry"
 )
 
 type Registry struct {

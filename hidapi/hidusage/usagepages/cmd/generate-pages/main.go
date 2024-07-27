@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/iancoleman/strcase"
-	"github.com/neuroplastio/neuroplastio/hidapi/hidusage/usagepages"
+	"github.com/neuroplastio/neio-agent/hidapi/hidusage/usagepages"
 	"github.com/yuin/goldmark"
 	meta "github.com/yuin/goldmark-meta"
 	"github.com/yuin/goldmark/extension"

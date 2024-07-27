@@ -1,6 +1,6 @@
 package actions
 
-import "github.com/neuroplastio/neuroplastio/flowapi"
+import "github.com/neuroplastio/neio-agent/flowapi"
 
 type None struct{}
 

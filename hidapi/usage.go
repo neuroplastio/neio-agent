@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/neuroplastio/neuroplastio/hidapi/hidusage/usagepages"
+	"github.com/neuroplastio/neio-agent/hidapi/hidusage/usagepages"
 )
 
 type Usage uint32

@@ -1,6 +1,6 @@
 nodes:
   - id: keychron
-    to: [test]
+    to: [layer]
     input:
       addr: linux/3434:fe0e:0
   # - id: mouse
@@ -10,7 +10,7 @@ nodes:
   - id: moonlander
     input:
       addr: linux/3297:1969:0
-    to: [base]
+    to: [layer]
 
   - id: test
     to: [out]
@@ -74,6 +74,7 @@ nodes:
       key.Y: char("+")
       H: char("=")
       key.N: char("-")
+      F18: sendString("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
       P: sendString(":=")
       Semicolon: char(":")
       Code34: char("\"")

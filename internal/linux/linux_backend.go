@@ -10,8 +10,8 @@ import (
 
 	"github.com/citilinkru/libudev"
 	"github.com/citilinkru/libudev/matcher"
-	"github.com/neuroplastio/neuroplastio/internal/configsvc"
-	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
+	"github.com/neuroplastio/neio-agent/internal/configsvc"
+	"github.com/neuroplastio/neio-agent/internal/hidsvc"
 	"github.com/psanford/uhid"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/sstallion/go-hid"

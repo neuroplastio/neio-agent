@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/flowapi"
-	"github.com/neuroplastio/neuroplastio/hidapi"
+	"github.com/neuroplastio/neio-agent/flowapi"
+	"github.com/neuroplastio/neio-agent/hidapi"
 )
 
 type Mod struct{}

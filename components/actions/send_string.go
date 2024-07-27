@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/neuroplastio/neuroplastio/flowapi"
+	"github.com/neuroplastio/neio-agent/flowapi"
 )
 
 type SendString struct{}
@@ -33,13 +33,25 @@ func (a SendString) CreateHandler(p flowapi.ActionProvider) (flowapi.ActionHandl
 		}
 		actions = append(actions, charAction)
 	}
-	return NewActionChainHandler(p.Context(), actions, delay+modDuration), nil
+	return NewActionChainHandler(p.Context(), actions, delay), nil
 }
 
 func NewActionChainHandler(ctx context.Context, actions []flowapi.ActionHandler, delay time.Duration) flowapi.ActionHandler {
 	if len(actions) == 0 {
 		return NewActionNoneHandler()
 	}
-	// TODO
-	return NewActionNoneHandler()
+	return func(ac flowapi.ActionContext) flowapi.ActionFinalizer {
+		return ac.Async(func(async flowapi.AsyncActionContext) {
+			for _, action := range actions {
+				fin := async.Action(action)
+				<-async.After(delay)
+				async.Finish(fin)
+				select {
+				case <-async.Interrupt():
+					return
+				case <-async.After(delay):
+				}
+			}
+		})
+	}
 }

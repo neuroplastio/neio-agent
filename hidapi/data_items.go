@@ -1,6 +1,6 @@
 package hidapi
 
-import "github.com/neuroplastio/neuroplastio/hidapi/hiddesc"
+import "github.com/neuroplastio/neio-agent/hidapi/hiddesc"
 
 type DataItemSet struct {
 	reportIDs []uint8

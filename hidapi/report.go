@@ -3,7 +3,7 @@ package hidapi
 import (
 	"fmt"
 
-	"github.com/neuroplastio/neuroplastio/pkg/bits"
+	"github.com/neuroplastio/neio-agent/pkg/bits"
 )
 
 type Report struct {

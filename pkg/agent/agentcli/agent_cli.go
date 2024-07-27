@@ -6,16 +6,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/neuroplastio/neuroplastio/pkg/agent"
+	"github.com/neuroplastio/neio-agent/pkg/agent"
 	"github.com/spf13/cobra"
 )
 
 func NewAgentCmd(configDir string) *cobra.Command {
 	cfg := agent.Config{
-		DataDir:      filepath.Join(configDir, "data"),
-		FlowConfig:   filepath.Join(configDir, "flow.yml"),
-		DeviceConfig: filepath.Join(configDir, "devices.yml"),
-		UhidConfig:   filepath.Join(configDir, "uhid.yml"),
+		DataDir:    filepath.Join(configDir, "data"),
+		FlowConfig: filepath.Join(configDir, "flow.yml"),
+		UhidConfig: filepath.Join(configDir, "uhid.yml"),
 	}
 	agentCmd := &cobra.Command{
 		Use:   "neio-agent",
@@ -24,7 +23,6 @@ func NewAgentCmd(configDir string) *cobra.Command {
 	}
 	agentCmd.PersistentFlags().StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "data directory")
 	agentCmd.PersistentFlags().StringVar(&cfg.FlowConfig, "flow-config", cfg.FlowConfig, "flow config file")
-	agentCmd.PersistentFlags().StringVar(&cfg.DeviceConfig, "device-config", cfg.DeviceConfig, "devices config file")
 	agentCmd.PersistentFlags().StringVar(&cfg.UhidConfig, "uhid-config", cfg.UhidConfig, "uhid config file")
 	agentCmd.AddCommand(NewRunCmd(&cfg))
 	return agentCmd
@@ -47,7 +45,7 @@ func Main(ctx context.Context, args []string, in io.Reader, out, errOut io.Write
 	if err != nil {
 		return err
 	}
-	cmd := NewAgentCmd(filepath.Join(dir, "neuroplastio"))
+	cmd := NewAgentCmd(filepath.Join(dir, "neio"))
 	cmd.SetArgs(args)
 	cmd.SetIn(in)
 	cmd.SetOut(out)

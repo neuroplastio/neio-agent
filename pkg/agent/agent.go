@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
-	"github.com/neuroplastio/neuroplastio/components/actions"
-	"github.com/neuroplastio/neuroplastio/components/nodes"
-	"github.com/neuroplastio/neuroplastio/internal/configsvc"
-	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
-	"github.com/neuroplastio/neuroplastio/internal/hidsvc"
-	"github.com/neuroplastio/neuroplastio/internal/linux"
+	"github.com/neuroplastio/neio-agent/components/actions"
+	"github.com/neuroplastio/neio-agent/components/nodes"
+	"github.com/neuroplastio/neio-agent/internal/configsvc"
+	"github.com/neuroplastio/neio-agent/internal/flowsvc"
+	"github.com/neuroplastio/neio-agent/internal/hidsvc"
+	"github.com/neuroplastio/neio-agent/internal/linux"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )

@@ -1,7 +1,7 @@
 package nodes
 
 import (
-	"github.com/neuroplastio/neuroplastio/internal/flowsvc"
+	"github.com/neuroplastio/neio-agent/internal/flowsvc"
 	"go.uber.org/zap"
 )
 
