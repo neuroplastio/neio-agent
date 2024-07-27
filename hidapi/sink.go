@@ -218,7 +218,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 					// TODO: non-blocking rate limiting
 					sinceLast := time.Since(t.lastActivation)
 					if sinceLast < t.activationMinInterval {
-						t.log.Info("Activation rate limit")
+						t.log.Info("Activation rate limit", zap.Duration("sinceLast", sinceLast))
 						time.Sleep(t.activationMinInterval - sinceLast)
 					}
 					t.lastActivation = time.Now()
