@@ -34,7 +34,7 @@ func NewCharActionHandler(ctx context.Context, char rune, rightShift bool, modDe
 		return nil, err
 	}
 	usage := hidapi.NewUsage(usagepages.KeyboardKeypad, uint16(key))
-	usageHandler := flowapi.NewActionUsageHandler(usage)
+	usageHandler := flowapi.NewToggleActionHandler(usage)
 	if shift {
 		shiftKey := usagepages.KeyLeftShift
 		if rightShift {
@@ -53,7 +53,7 @@ var asciiCharMap = map[rune]uint8{
 	']':  usagepages.KeyRightBracket,
 	'\\': usagepages.KeyBackslash,
 	';':  usagepages.KeySemicolon,
-	'\'': usagepages.KeyCode34,
+	'\'': usagepages.KeyQuote,
 	',':  usagepages.KeyComma,
 	'.':  usagepages.KeyPeriod,
 	'/':  usagepages.KeySlash,
@@ -69,7 +69,7 @@ var asciiCharMapShifted = map[rune]uint8{
 	'}': usagepages.KeyRightBracket,
 	'|': usagepages.KeyBackslash,
 	':': usagepages.KeySemicolon,
-	'"': usagepages.KeyCode34,
+	'"': usagepages.KeyQuote,
 	'<': usagepages.KeyComma,
 	'>': usagepages.KeyPeriod,
 	'?': usagepages.KeySlash,

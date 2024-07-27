@@ -88,14 +88,14 @@ func NewBackend(log *zap.Logger, configSvc *configsvc.Service, uhidPath string, 
 }
 
 type UhidConfig struct {
-	Uhid []UhidDeviceConfig `json:"uhid"`
+	Uhid []UhidDeviceConfig `yaml:"uhid"`
 }
 
 type UhidDeviceConfig struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	VendorID  uint32 `json:"vendorId"`
-	ProductID uint32 `json:"productId"`
+	ID        string `yaml:"id"`
+	Name      string `yaml:"name"`
+	VendorID  uint32 `yaml:"vendorId"`
+	ProductID uint32 `yaml:"productId"`
 }
 
 func (b *Backend) Ready() <-chan struct{} {

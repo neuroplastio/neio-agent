@@ -1,8 +1,9 @@
 package flowdsl
 
 import (
-	"encoding/json"
 	"fmt"
+
+	"gopkg.in/yaml.v2"
 )
 
 func ParseStatement(stmt string) (Statement, error) {
@@ -63,7 +64,7 @@ func ParseUsageStatement(expr string) (UsageStatement, error) {
 	return *result, nil
 }
 
-type JSONExpressionMapItem struct {
+type YAMLExpressionMapItem struct {
 	Usage     UsageStatement
 	Statement Statement
 
@@ -71,14 +72,14 @@ type JSONExpressionMapItem struct {
 	StatementString string
 }
 
-type JSONExpressionItems []JSONExpressionMapItem
+type YAMLExpressionMap []YAMLExpressionMapItem
 
-func (j *JSONExpressionItems) UnmarshalJSON(data []byte) error {
+func (j *YAMLExpressionMap) UnmarshalYAML(data []byte) error {
 	strings := make(map[string]string)
-	if err := json.Unmarshal(data, &strings); err != nil {
+	if err := yaml.Unmarshal(data, &strings); err != nil {
 		return err
 	}
-	items := make([]JSONExpressionMapItem, 0, len(strings))
+	items := make([]YAMLExpressionMapItem, 0, len(strings))
 	for k, v := range strings {
 		usage, err := ParseUsageStatement(k)
 		if err != nil {
@@ -88,13 +89,13 @@ func (j *JSONExpressionItems) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		items = append(items, JSONExpressionMapItem{
+		items = append(items, YAMLExpressionMapItem{
 			Usage:           usage,
 			Statement:       stmt,
 			UsageString:     k,
 			StatementString: v,
 		})
 	}
-	*j = JSONExpressionItems(items)
+	*j = YAMLExpressionMap(items)
 	return nil
 }

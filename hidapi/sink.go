@@ -52,7 +52,7 @@ func NewEventSink(log *zap.Logger, dataItems DataItemSet) *EventSink {
 		usageValuesIndex:      make(map[Usage]itemAddress),
 		reports:               make(map[uint8]Report),
 		usageActivations:      make(map[uint8]map[Usage]int),
-		activationMinInterval: time.Millisecond,
+		activationMinInterval: 500 * time.Microsecond,
 	}
 	etr.initializeStates()
 	return etr
@@ -66,7 +66,7 @@ func (t *EventSink) initializeStates() {
 		}
 		for i, item := range rd.DataItems {
 			// TODO: support empty dynamic arrays
-			// TODO: support const values (from first HIDState)
+			// TODO: support const values (from first HIDEvent)
 			report.Fields[i] = bits.NewZeros(int(item.ReportCount * item.ReportSize))
 			t.log.Debug("DataItem",
 				zap.Uint8("reportId", rd.ID),
@@ -113,6 +113,12 @@ func (t *EventSink) initializeStates() {
 	}
 	for usagePage, items := range t.usageSetRanges {
 		slices.SortFunc(items, func(a, b usageRange) int {
+			if a.dataItem.ReportSize < b.dataItem.ReportSize {
+				return -1
+			}
+			if a.dataItem.ReportSize > b.dataItem.ReportSize {
+				return 1
+			}
 			if a.start < b.start {
 				return -1
 			}
@@ -155,7 +161,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		}
 		return reports[reportMap[reportID]]
 	}
-	t.log.Debug("Event", zap.Any("usages", e.Usages()))
+	t.log.Debug("Event", zap.String("event", e.String()))
 	for _, usageEvent := range e.Usages() {
 		usage := usageEvent.Usage
 		var (
@@ -165,23 +171,23 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		case usageEvent.Activate != nil:
 			rang, ok := t.usageRange(usage)
 			if !ok {
-				t.log.Warn("[ETR] Usage has no matching report",
+				t.log.Warn("Usage has no matching report",
 					zap.String("usage", usage.String()),
 				)
 				continue
 			}
 			addr = rang.addr
-		case usageEvent.Value != nil:
+		case usageEvent.Delta != nil:
 			a, ok := t.usageValuesIndex[usage]
 			if !ok {
-				t.log.Warn("[ETR] Usage has no matching report",
+				t.log.Warn("Usage has no matching report",
 					zap.String("usage", usage.String()),
 				)
 				continue
 			}
 			addr = a
 		default:
-			t.log.Warn("[ETR] Usage event has no action")
+			t.log.Warn("Usage event has no action")
 			continue
 		}
 		report := getReport(addr.reportID)
@@ -199,7 +205,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 					// TODO: non-blocking rate limiting
 					sinceLast := time.Since(t.lastActivation)
 					if sinceLast < t.activationMinInterval {
-						t.log.Info("Activation rate limit")
+						t.log.Warn("Activation rate limit", zap.Duration("sinceLast", sinceLast))
 						time.Sleep(t.activationMinInterval - sinceLast)
 					}
 					t.lastActivation = time.Now()
@@ -218,14 +224,15 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 					// TODO: non-blocking rate limiting
 					sinceLast := time.Since(t.lastActivation)
 					if sinceLast < t.activationMinInterval {
-						t.log.Info("Activation rate limit", zap.Duration("sinceLast", sinceLast))
+						t.log.Warn("Activation rate limit", zap.Duration("sinceLast", sinceLast))
 						time.Sleep(t.activationMinInterval - sinceLast)
 					}
 					t.lastActivation = time.Now()
 				}
 			}
-		case usageEvent.Value != nil:
-			t.usageValues[addr.reportID][addr.itemIdx].SetValue(report.Fields[addr.itemIdx], usage, *usageEvent.Value)
+		case usageEvent.Delta != nil:
+			current := t.usageValues[addr.reportID][addr.itemIdx].GetValue(report.Fields[addr.itemIdx], usage)
+			t.usageValues[addr.reportID][addr.itemIdx].SetValue(report.Fields[addr.itemIdx], usage, current+*usageEvent.Delta)
 		}
 	}
 

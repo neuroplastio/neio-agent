@@ -108,7 +108,7 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	cfg, err := configsvc.Register(s.config, s.flowPath, FlowConfig{}, s.onConfigChange)
 	if err != nil {
-		return fmt.Errorf("failed to register config: %w", err)
+		return fmt.Errorf("failed to register flow config: %w", err)
 	}
 	err = s.bus.Start(ctx)
 	if err != nil {

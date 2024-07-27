@@ -1,116 +1,141 @@
 nodes:
   - id: keychron
-    to: [layer]
+    to: [test]
     input:
-      addr: linux/3434:fe0e:0
-  # - id: mouse
-  #  input:
-  #    addr: linux/046d:c547:0
-  #  to: [out]
+      addr: linux/3434:fe0e.0
+  - id: mouse
+    to: [mods]
+    input:
+      addr: linux/046d:c547.0
   - id: moonlander
+    to: [mods]
     input:
-      addr: linux/3297:1969:0
-    to: [layer]
+      addr: linux/3297:1969.0
 
   - id: test
-    to: [out]
+    to: [split]
     bind:
       T: tapHold(T, H)
 
-  - id: base
+  - id: mods
     to: [layer]
     bind:
-      LeftShift: tapHold(Esc, LeftShift, 130ms)
-      LeftControl: tapHold(Enter, LeftControl, 130ms)
-      F16: $layer.switch("control")
-      F17: $layer.switch("sym")
-      F18: RightGui+Enter
-      Enter: tapHold(Enter, $layer.switch("nav"), 130ms)
-
+      interrupt: [kb.*, con.*, dsk.Wheel]
+      map:
+        F16: $layer.switch("control")
+        F17: $layer.switch("sym")
+        LeftShift: tapHold(Esc, LeftShift, 130ms)
+        LeftControl: tapHold(Enter, LeftControl, 130ms)
+        Enter: tapHold(Enter, $layer.switch("nav"), 130ms)
 
   - id: layer
-    to: [nav, sym, control, out]
+    to: [nav, sym, control, base]
     mux:
-      fallback: out
+      fallback: base
 
   - id: nav
-    to: [out]
+    to: [base]
     bind:
-      key.Y: Home
-      U: PageDown
-      I: PageUp
-      O: End
-      P: Code9A
-      H: LeftArrow
-      J: DownArrow
-      K: UpArrow
-      L: RightArrow
-      key.N: LeftControl+H
-      # M: Wheel -1
-      # ,: Wheel +1
-      Comma: LeftControl+L
+      map:
+        Y: Home
+        U: PageDown
+        I: PageUp
+        O: End
+        P: PrintScreen
+        H: LeftArrow
+        J: DownArrow
+        K: UpArrow
+        L: RightArrow
+        N: LeftControl+H
+        M: repeat(dsk.Wheel=-1, 100ms, 12ms)
+        Comma: repeat(dsk.Wheel=+1, 100ms, 12ms)
+        Period: LeftControl+L
+        S: repeat(dsk.X=-1, 20ms, 1ms)
+        F: repeat(dsk.X=+1, 20ms, 1ms)
+        E: repeat(dsk.Y=-1, 20ms, 1ms)
+        D: repeat(dsk.Y=+1, 20ms, 1ms)
+        Spacebar: btn.1
 
   - id: sym
-    to: [out]
+    to: [base]
     bind:
-      Tab: LeftShift+Tab
-      Q: char("!")
-      W: char("@")
-      E: char("{")
-      R: char("}")
-      T: char("&")
-      A: char("[")
-      S: char("]")
-      D: char("(")
-      F: char(")")
-      G: char("*")
-      GraveAccent: char("~")
-      Z: char("\\")
-      X: char("|")
-      C: char("#")
-      V: char("$")
-      B: char("_")
+      map:
+        Tab: LeftShift+Tab
+        Q: char("!")
+        W: char("@")
+        E: char("{")
+        R: char("}")
+        T: char("&")
+        A: char("[")
+        S: char("]")
+        D: KpLeftParenthesis
+        F: KpRightParenthesis
+        G: KpAsterisk
+        GraveAccent: char("~")
+        Z: char("\\")
+        X: char("|")
+        C: char("#")
+        V: char("$")
+        B: char("_")
 
-      key.Y: char("+")
-      H: char("=")
-      key.N: char("-")
-      F18: sendString("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
-      P: sendString(":=")
-      Semicolon: char(":")
-      Code34: char("\"")
+        Y: KpPlus
+        H: KpEqual
+        N: KpMinus
+        F18: sendString("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo", false, 4ms, 1ms)
+        P: sendString(":=")
+        Semicolon: char(":")
+        Quote: char("\"")
 
-      M: key.1
-      Comma: key.2
-      Period: key.3
-      J: key.4
-      K: key.5
-      L: key.6
-      U: key.7
-      I: key.8
-      O: key.9
-      Enter: key.0
+        M: kb.1
+        Comma: kb.2
+        Period: kb.3
+        J: kb.4
+        K: kb.5
+        L: kb.6
+        U: kb.7
+        I: kb.8
+        O: kb.9
+        Enter: kb.0
 
   - id: control
-    to: [out]
+    to: [base]
     bind:
-      # F: Play/Pause
-      # G: Next Track
-      M: F1
-      Comma: F2
-      Period: F3
-      J: F4
-      K: F5
-      L: F6
-      U: F7
-      I: F8
-      O: F9
-      key.N: F10
-      H: F11
-      key.Y: F12
+      map:
+        F: con.PlayPause
+        G: con.ScanNextTrack
+        M: F1
+        Comma: F2
+        Period: F3
+        J: F4
+        K: F5
+        L: F6
+        U: F7
+        I: F8
+        O: F9
+        N: F10
+        H: F11
+        Y: F12
 
-  - id: out
+  - id: base
+    to: [split]
+    bind:
+      map:
+        F18: RightGui+Enter
+
+  - id: split
+    to: [out-kb, out-pointer]
+    split:
+      out-pointer: [dsk, btn]
+      out-kb: []
+
+  - id: out-kb
     output:
-      addr: linux/uhid:neuroplastio
+      addr: linux/uhid:neio-kb
       descriptorFrom:
-        - linux/3297:1969:0
-        - linux/046d:c547:0
+        - linux/3297:1969.0
+        - linux/3297:1969.3
+  - id: out-pointer
+    output:
+      addr: linux/uhid:neio-pointer
+      descriptorFrom:
+        - linux/046d:c547.0

@@ -127,7 +127,7 @@ func (f MuxType) CreateNode(p flowapi.NodeProvider) (flowapi.Node, error) {
 }
 
 type muxConfig struct {
-	Fallback string `json:"fallback"`
+	Fallback string `yaml:"fallback"`
 }
 
 func (r *Mux) Configure(c flowapi.NodeConfigurator) error {

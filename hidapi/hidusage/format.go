@@ -32,23 +32,43 @@ func Format(page, id uint16) string {
 	return fmt.Sprintf("%s.%s", pageInfo.Alias, usageInfo.Alias)
 }
 
-func Parse(str string) (uint16, uint16, error) {
+func Parse(str string) (usagepages.PageInfo, usagepages.UsageInfo, error) {
 	parts := strings.Split(str, ".")
 	if len(parts) == 1 {
 		parts = []string{"kb", parts[0]}
 	}
 	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid usage string: %s", str)
+		return usagepages.PageInfo{}, usagepages.UsageInfo{}, fmt.Errorf("invalid usage string: %s", str)
 	}
 	prefix := parts[0]
+	pageInfo, err := ParsePage(prefix)
+	if err != nil {
+		return usagepages.PageInfo{}, usagepages.UsageInfo{}, err
+	}
+	if parser, ok := parsers[pageInfo.Code]; ok {
+		id, err := parser(parts[1])
+		if err != nil {
+			return usagepages.PageInfo{}, usagepages.UsageInfo{}, err
+		}
+		// TODO: parsers and formatters inside PageInfo object
+		return pageInfo, usagepages.UsageInfo{ID: id}, nil
+	}
+	usageInfo, ok := pageInfo.Usages.ByAlias(parts[1])
+	if !ok {
+		return usagepages.PageInfo{}, usagepages.UsageInfo{}, fmt.Errorf("unknown usage: %s", parts[1])
+	}
+	return pageInfo, usageInfo, nil
+}
+
+func ParsePage(str string) (usagepages.PageInfo, error) {
 	var (
 		pageInfo usagepages.PageInfo
 		ok       bool
 	)
-	if strings.HasPrefix(prefix, "0x") {
-		code, err := strconv.ParseUint(prefix[2:], 16, 16)
+	if strings.HasPrefix(str, "0x") {
+		code, err := strconv.ParseUint(str[2:], 16, 16)
 		if err != nil {
-			return 0, 0, fmt.Errorf("invalid usage page: %s", prefix)
+			return usagepages.PageInfo{}, fmt.Errorf("invalid usage page: %s", str)
 		}
 		pageInfo, ok = usagepages.GetPageInfoByCode(uint16(code))
 		if !ok {
@@ -56,23 +76,12 @@ func Parse(str string) (uint16, uint16, error) {
 			ok = true
 		}
 	} else {
-		pageInfo, ok = usagepages.GetPageInfoByAlias(prefix)
+		pageInfo, ok = usagepages.GetPageInfoByAlias(str)
 	}
 	if !ok {
-		return 0, 0, fmt.Errorf("unknown usage page: %s", prefix)
+		return usagepages.PageInfo{}, fmt.Errorf("unknown usage page: %s", str)
 	}
-	if parser, ok := parsers[pageInfo.Code]; ok {
-		id, err := parser(parts[1])
-		if err != nil {
-			return 0, 0, err
-		}
-		return pageInfo.Code, id, nil
-	}
-	usageInfo, ok := pageInfo.Usages.ByAlias(parts[1])
-	if !ok {
-		return 0, 0, fmt.Errorf("unknown usage: %s", parts[1])
-	}
-	return pageInfo.Code, usageInfo.ID, nil
+	return pageInfo, nil
 }
 
 func FormatKeyboardKeypad(id uint16) string {

@@ -55,12 +55,19 @@ type ActionProvider interface {
 type ActionCreator func(p ActionProvider) (ActionHandler, error)
 type SignalCreator func(p ActionProvider) (SignalHandler, error)
 
-func NewActionUsageHandler(usages ...hidapi.Usage) ActionHandler {
+func NewToggleActionHandler(usages ...hidapi.Usage) ActionHandler {
 	return func(ac ActionContext) ActionFinalizer {
 		ac.HIDEvent().Activate(usages...)
 		return func(ac ActionContext) {
 			ac.HIDEvent().Deactivate(usages...)
 		}
+	}
+}
+
+func NewSetDeltaHandler(usage hidapi.Usage, value int32) ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		ac.HIDEvent().SetDelta(usage, value)
+		return nil
 	}
 }
 
@@ -78,7 +85,7 @@ func (a *actionContext) HIDEvent() *hidapi.Event {
 }
 
 func (a *actionContext) Async(fn func(asyncCtx AsyncActionContext)) ActionFinalizer {
-	return a.pool.runAsync(a.clone(), fn)
+	return a.pool.runAsync(a, fn)
 }
 
 func (a *actionContext) clone() *actionContext {
@@ -92,6 +99,7 @@ func (a *actionContext) clone() *actionContext {
 
 type AsyncActionContext interface {
 	Interrupt() <-chan struct{}
+	Interrupted() bool
 	After(duration time.Duration) <-chan struct{}
 	Finished() <-chan struct{}
 	Do(fn func(ac ActionContext))
@@ -101,13 +109,13 @@ type AsyncActionContext interface {
 }
 
 type asyncActionContext struct {
-	ac             *actionContext
-	interrupt      chan struct{}
-	finished       chan struct{}
-	done           chan struct{}
-	onFinish       []ActionFinalizer
-	capturedUsages map[hidapi.Usage]struct{}
-	captured       chan ActionContext
+	parent      *actionContext
+	ac          *actionContext
+	interrupted bool
+	interrupt   chan struct{}
+	finished    chan struct{}
+	done        chan struct{}
+	onFinish    []ActionFinalizer
 }
 
 func NewActionContextPool(ctx context.Context, log *zap.Logger, hidChan chan<- *hidapi.Event) *ActionContextPool {
@@ -137,36 +145,48 @@ func (a *ActionContextPool) New(event *hidapi.Event) ActionContext {
 	return ac
 }
 
-func (a *ActionContextPool) Interrupt() {
+func (a *ActionContextPool) Interrupt(ac ActionContext) {
 	a.mu.Lock()
-	for ac := range a.activeContexts {
-		if ac.interrupt != nil {
-			close(ac.interrupt)
+	for async := range a.activeContexts {
+		if async.parent == ac {
+			continue
+		}
+		if !async.interrupted {
+			close(async.interrupt)
 		}
 	}
-	for ac := range a.activeContexts {
-		if ac.interrupt != nil {
+	for async := range a.activeContexts {
+		if async.parent == ac {
+			continue
+		}
+		if !async.interrupted {
+			async.interrupted = true
 			select {
-			case <-ac.done:
+			case <-async.done:
+				a.log.Debug("interrupted async action")
 			case <-a.ctx.Done():
 			}
 		}
-		ac.interrupt = nil
 	}
 	a.mu.Unlock()
 }
 
 func (a *ActionContextPool) runAsync(ac *actionContext, fn func(ac AsyncActionContext)) ActionFinalizer {
 	asyncCtx := &asyncActionContext{
-		ac:       ac,
-		finished: make(chan struct{}),
-		done:     make(chan struct{}),
+		parent:    ac,
+		ac:        ac.clone(),
+		finished:  make(chan struct{}),
+		done:      make(chan struct{}),
+		interrupt: make(chan struct{}),
 	}
 	a.mu.Lock()
 	a.activeContexts[asyncCtx] = struct{}{}
 	a.mu.Unlock()
 	go func() {
-		defer close(asyncCtx.done)
+		defer func() {
+			close(asyncCtx.done)
+
+		}()
 		fn(asyncCtx)
 	}()
 	return func(ac ActionContext) {
@@ -193,10 +213,11 @@ func (a *asyncActionContext) Finished() <-chan struct{} {
 	return a.finished
 }
 
+func (a *asyncActionContext) Interrupted() bool {
+	return a.interrupted
+}
+
 func (a *asyncActionContext) Interrupt() <-chan struct{} {
-	if a.interrupt == nil {
-		a.interrupt = make(chan struct{})
-	}
 	return a.interrupt
 }
 

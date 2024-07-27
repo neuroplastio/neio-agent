@@ -1,6 +1,10 @@
 package hidapi
 
-import "sync"
+import (
+	"fmt"
+	"strings"
+	"sync"
+)
 
 type Event struct {
 	mu       sync.Mutex
@@ -29,7 +33,20 @@ func NewEvent() *Event {
 type UsageEvent struct {
 	Usage    Usage
 	Activate *bool
-	Value    *int32
+	Delta    *int32
+}
+
+func (u UsageEvent) String() string {
+	if u.Activate != nil {
+		if *u.Activate {
+			return "+" + u.Usage.String()
+		} else {
+			return "-" + u.Usage.String()
+		}
+	} else if u.Delta != nil {
+		return fmt.Sprintf("%s=%d", u.Usage.String(), *u.Delta)
+	}
+	return "(empty)"
 }
 
 func (h *Event) IsEmpty() bool {
@@ -118,11 +135,11 @@ func (h *Event) Deactivate(usages ...Usage) {
 	h.mu.Unlock()
 }
 
-func (h *Event) SetValue(usage Usage, value int32) {
+func (h *Event) SetDelta(usage Usage, delta int32) {
 	h.mu.Lock()
 	event := UsageEvent{
 		Usage: usage,
-		Value: ptr(value),
+		Delta: ptr(delta),
 	}
 	h.addUsage(event)
 	h.mu.Unlock()
@@ -134,4 +151,21 @@ func (h *Event) Usages() []UsageEvent {
 	copy(usages, h.usages)
 	h.mu.Unlock()
 	return usages
+}
+
+func (h *Event) String() string {
+	h.mu.Lock()
+	var parts []string
+	for _, usage := range h.usages {
+		parts = append(parts, usage.String())
+	}
+	h.mu.Unlock()
+	return strings.Join(parts, ", ")
+}
+
+func (h *Event) Clear() {
+	h.mu.Lock()
+	h.usages = h.usages[:0]
+	clear(h.usageMap)
+	h.mu.Unlock()
 }

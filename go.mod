@@ -16,14 +16,19 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/ristretto v0.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/fatih/color v1.10.0 // indirect
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
+	github.com/mattn/go-colorable v0.1.8 // indirect
+	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/stoewer/go-strcase v1.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/sys v0.19.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -32,6 +37,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/citilinkru/libudev v1.0.0
 	github.com/dgraph-io/badger v1.6.2
+	github.com/goccy/go-yaml v1.12.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/karalabe/hid v1.0.0
 	github.com/openstadia/go-usb-gadget v0.0.0-20231115171102-aebd56bbb965

@@ -1,5 +1,13 @@
 uhid:
-  - id: neuroplastio
-    name: Neuroplast.io
-    vendorId: 0x6668
+  - id: neio-kb
+    name: neio-kb
+    vendorId: 0x6666
     productId: 0x6666
+  - id: neio-pointer
+    name: neio-pointer
+    vendorId: 0x6666
+    productId: 0x6667
+  - id: neio-consumer
+    name: neio-consumer
+    vendorId: 0x6666
+    productId: 0x6668

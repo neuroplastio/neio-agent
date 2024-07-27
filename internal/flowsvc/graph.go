@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/goccy/go-yaml"
 	"github.com/neuroplastio/neio-agent/flowapi"
 	"github.com/neuroplastio/neio-agent/flowapi/flowdsl"
 	"github.com/neuroplastio/neio-agent/hidapi"
@@ -18,6 +19,7 @@ type GraphBuilder struct {
 	registry *GraphRegistry
 	bus      *FlowBus
 
+	idMap   map[string]struct{}
 	nodeIDs []string
 
 	edgesDown map[string][]string
@@ -42,6 +44,7 @@ func NewGraphBuilder(log *zap.Logger, reg *Registry, bus *FlowBus) GraphBuilder 
 		registry: registry,
 		bus:      bus,
 
+		idMap:     make(map[string]struct{}),
 		edgesDown: make(map[string][]string),
 		edgesUp:   make(map[string][]string),
 		up:        make(map[string]flowapi.Stream),
@@ -50,6 +53,10 @@ func NewGraphBuilder(log *zap.Logger, reg *Registry, bus *FlowBus) GraphBuilder 
 }
 
 func (g GraphBuilder) AddNode(typ string, id string, to []string) GraphBuilder {
+	if _, ok := g.idMap[id]; ok {
+		g.errors = append(g.errors, fmt.Errorf("multiple instances of node with id %q", id))
+	}
+	g.idMap[id] = struct{}{}
 	g.nodeIDs = append(g.nodeIDs, id)
 	g.registry.nodeTypes[id] = typ
 	for _, toID := range to {
@@ -86,7 +93,6 @@ func (g GraphBuilder) Validate() error {
 		switch meta.UpstreamType {
 		case flowapi.NodeLinkTypeMany:
 			if len(g.edgesUp[id]) == 0 {
-				fmt.Println(g.edgesDown[id])
 				return fmt.Errorf("node %s has no upstream nodes", id)
 			}
 		case flowapi.NodeLinkTypeOne:
@@ -116,6 +122,11 @@ func (g GraphBuilder) Validate() error {
 		case flowapi.NodeLinkTypeNone:
 			if len(g.edgesDown[id]) > 0 {
 				return fmt.Errorf("node %s should not have downstream nodes", id)
+			}
+		}
+		for _, toID := range g.edgesDown[id] {
+			if _, ok := g.idMap[toID]; !ok {
+				return fmt.Errorf("node %s points to a non-existent node %s", id, toID)
 			}
 		}
 	}
@@ -307,7 +318,7 @@ type nodeConfigurator struct {
 }
 
 func (r nodeConfigurator) Unmarshal(to any) error {
-	return json.Unmarshal(r.config, to)
+	return yaml.UnmarshalWithOptions(r.config, to, yaml.UseOrderedMap())
 }
 
 func (r nodeConfigurator) ActionHandler(stmt flowdsl.Statement) (flowapi.ActionHandler, error) {
@@ -405,11 +416,18 @@ func (g *Graph) Run() {
 }
 
 func (g *GraphRegistry) NewUsageActionHandler(stmt flowdsl.UsageStatement) (flowapi.ActionHandler, error) {
+	if stmt.Usage != "" {
+		usage, err := hidapi.ParseUsage(stmt.Usage)
+		if err != nil {
+			return nil, err
+		}
+		return flowapi.NewSetDeltaHandler(usage, stmt.Value), nil
+	}
 	usages, err := hidapi.ParseUsages(stmt.Usages)
 	if err != nil {
 		return nil, err
 	}
-	return flowapi.NewActionUsageHandler(usages...), nil
+	return flowapi.NewToggleActionHandler(usages...), nil
 }
 
 func (g *GraphRegistry) ActionHandler(ctx context.Context, stmt flowdsl.Statement) (flowapi.ActionHandler, error) {

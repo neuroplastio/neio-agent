@@ -33,8 +33,8 @@ func (o OutputNodeType) CreateNode(p flowapi.NodeProvider) (flowapi.Node, error)
 }
 
 type outputConfig struct {
-	Addr           Address   `json:"addr"`
-	DescriptorFrom []Address `json:"descriptorFrom"`
+	Addr           Address   `yaml:"addr"`
+	DescriptorFrom []Address `yaml:"descriptorFrom"`
 }
 
 type OutputNode struct {

@@ -77,7 +77,7 @@ func (r *EventSource) OnReport(report Report) *Event {
 				if t0 == t1 {
 					continue
 				}
-				event.SetValue(usage, t1)
+				event.SetDelta(usage, t1-t0)
 			}
 			continue
 		}

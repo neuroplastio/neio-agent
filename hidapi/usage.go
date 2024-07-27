@@ -1,11 +1,7 @@
 package hidapi
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
-
-	"github.com/neuroplastio/neio-agent/hidapi/hidusage/usagepages"
+	"github.com/neuroplastio/neio-agent/hidapi/hidusage"
 )
 
 type Usage uint32
@@ -19,7 +15,7 @@ func (u Usage) ID() uint16 {
 }
 
 func (u Usage) String() string {
-	return fmt.Sprintf("0x%02x/0x%02x", u.Page(), u.ID())
+	return hidusage.Format(u.Page(), u.ID())
 }
 
 func NewUsage(page, id uint16) Usage {
@@ -29,10 +25,6 @@ func NewUsage(page, id uint16) Usage {
 func ParseUsages(str []string) ([]Usage, error) {
 	usages := make([]Usage, 0, len(str))
 	for _, part := range str {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return nil, fmt.Errorf("empty usage")
-		}
 		usage, err := ParseUsage(part)
 		if err != nil {
 			return nil, err
@@ -44,28 +36,9 @@ func ParseUsages(str []string) ([]Usage, error) {
 }
 
 func ParseUsage(str string) (Usage, error) {
-	parts := strings.Split(str, ".")
-	if len(parts) == 1 {
-		parts = []string{"key", parts[0]}
+	pageInfo, usageInfo, err := hidusage.Parse(str)
+	if err != nil {
+		return 0, err
 	}
-	if len(parts) != 2 {
-		return 0, fmt.Errorf("invalid usage: %s", str)
-	}
-	prefix := parts[0]
-	switch prefix {
-	case "key":
-		code := usagepages.KeyCode("Key" + parts[1])
-		if code == 0 {
-			return 0, fmt.Errorf("invalid key code: %s", parts[1])
-		}
-		return NewUsage(usagepages.KeyboardKeypad, uint16(code)), nil
-	case "btn":
-		code, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return 0, fmt.Errorf("invalid button code: %s", parts[1])
-		}
-		return NewUsage(usagepages.Button, uint16(code)), nil
-	default:
-		return 0, fmt.Errorf("invalid usage prefix: %s", prefix)
-	}
+	return NewUsage(pageInfo.Code, usageInfo.ID), nil
 }

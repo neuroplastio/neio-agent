@@ -1,40 +1,40 @@
+//go:build !generate
+
 package usagepages
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
+
+var keyCodeMap = map[string]uint8{}
+
+func init() {
+	for code, name := range keyNameMap {
+		keyCodeMap[name] = code
+	}
+}
+
+func KeyCode(name string) (uint8, error) {
+	if strings.HasPrefix(name, "Code") {
+		code, err := strconv.ParseUint(name[4:], 16, 8)
+		if err != nil {
+			return 0, fmt.Errorf("invalid key code: %s", name)
+		}
+		return uint8(code), nil
+	}
+	code, ok := keyCodeMap[name]
+	if !ok {
+		return 0, fmt.Errorf("invalid key name: %s", name)
+	}
+	return code, nil
+}
 
 func KeyName(code uint8) string {
 	name, ok := keyNameMap[code]
 	if !ok {
-		return fmt.Sprintf("0x%x", code)
+		return fmt.Sprintf("Code%02x", code)
 	}
 	return name
-}
-
-var keyNameReverseMap = map[string]uint8{}
-
-func init() {
-	for code, name := range keyNameMap {
-		keyNameReverseMap[name] = code
-	}
-}
-
-func KeyCode(name string) uint8 {
-	code, ok := keyNameReverseMap[name]
-	if !ok {
-		return 0
-	}
-	return code
-}
-
-func KeyCodesRegexp() string {
-	items := make([]string, 0, len(keyNameMap))
-	for _, name := range keyNameMap {
-		n := strings.TrimPrefix(name, "Key")
-		items = append(items, n)
-	}
-
-	return "(" + strings.Join(items, "|") + ")"
 }

@@ -38,6 +38,7 @@ func NewActionTapHoldHandler(ctx context.Context, onTap flowapi.ActionHandler, o
 			select {
 			case <-async.Interrupt():
 				async.OnFinish(async.Action(onHold))
+				<-async.After(tapDuration)
 			case <-async.After(delay):
 				async.OnFinish(async.Action(onHold))
 			case <-async.Finished():

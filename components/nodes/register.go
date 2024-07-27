@@ -12,4 +12,7 @@ func Register(log *zap.Logger, reg *flowsvc.Registry) {
 	reg.MustRegisterNodeType("mux", MuxType{
 		log: log.Named("mux"),
 	})
+	reg.MustRegisterNodeType("split", SplitType{
+		log: log.Named("split"),
+	})
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
+	"github.com/goccy/go-yaml"
 	"github.com/neuroplastio/neio-agent/flowapi"
 	"github.com/neuroplastio/neio-agent/pkg/bus"
 	"github.com/puzpuzpuz/xsync/v3"
@@ -713,8 +714,8 @@ type BackendOutputDeviceHandle interface {
 }
 
 type Address struct {
-	Backend string `json:"backend"`
-	ID      string `json:"id"`
+	Backend string `yaml:"backend" json:"backend"`
+	ID      string `yaml:"id" json:"id"`
 }
 
 func (a Address) String() string {
@@ -729,28 +730,55 @@ func (a *Address) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}
-	if data[0] == '{' {
-		var addr struct {
-			Backend string `json:"backend"`
-			ID      string `json:"id"`
-		}
-		err := json.Unmarshal(data, &addr)
-		if err != nil {
-			return err
-		}
+	var addr struct {
+		Backend string `yaml:"backend"`
+		ID      string `yaml:"id"`
+	}
+	err := json.Unmarshal(data, &addr)
+	if err == nil {
 		*a = Address{Backend: addr.Backend, ID: addr.ID}
 		return nil
 	}
 	var s string
-	err := json.Unmarshal(data, &s)
+	err = json.Unmarshal(data, &s)
 	if err != nil {
 		return err
 	}
-	addr, err := ParseAddress(s)
+	parsed, err := ParseAddress(s)
 	if err != nil {
 		return err
 	}
-	*a = addr
+	*a = parsed
+	return nil
+}
+
+func (a Address) MarshalYAML() ([]byte, error) {
+	return yaml.Marshal(a.String())
+}
+
+func (a *Address) UnmarshalYAML(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	var addr struct {
+		Backend string `yaml:"backend"`
+		ID      string `yaml:"id"`
+	}
+	err := yaml.Unmarshal(data, &addr)
+	if err == nil {
+		*a = Address{Backend: addr.Backend, ID: addr.ID}
+		return nil
+	}
+	var s string
+	err = yaml.Unmarshal(data, &s)
+	if err != nil {
+		return err
+	}
+	parsed, err := ParseAddress(s)
+	if err != nil {
+		return err
+	}
+	*a = parsed
 	return nil
 }
 
@@ -761,7 +789,7 @@ func ParseAddress(s string) (Address, error) {
 		return Address{}, fmt.Errorf("invalid address: %s", s)
 	}
 	addr.Backend = parts[0]
-	addr.ID = parts[1]
+	addr.ID = strings.ReplaceAll(parts[1], ".", ":")
 	return addr, nil
 }
 

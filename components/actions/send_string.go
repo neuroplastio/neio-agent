@@ -44,12 +44,17 @@ func NewActionChainHandler(ctx context.Context, actions []flowapi.ActionHandler,
 		return ac.Async(func(async flowapi.AsyncActionContext) {
 			for _, action := range actions {
 				fin := async.Action(action)
-				<-async.After(delay)
+				select {
+				case <-async.After(delay):
+				case <-async.Interrupt():
+					async.Finish(fin)
+					return
+				}
 				async.Finish(fin)
 				select {
+				case <-async.After(delay):
 				case <-async.Interrupt():
 					return
-				case <-async.After(delay):
 				}
 			}
 		})

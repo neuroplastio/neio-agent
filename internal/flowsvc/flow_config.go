@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/cespare/xxhash"
+	"github.com/goccy/go-yaml"
 )
 
 type FlowConfig struct {
 	// Nodes is a list of node configurations.
-	Nodes []NodeConfig `json:"nodes"`
+	Nodes []NodeConfig `yaml:"nodes"`
 }
 
 func (f FlowConfig) treeHash() uint64 {
@@ -24,23 +25,23 @@ func (f FlowConfig) treeHash() uint64 {
 }
 
 type NodeConfig struct {
-	ID     string          `json:"id"`
-	Type   string          `json:"type"`
-	To     []string        `json:"to"`
-	Config json.RawMessage `json:"config"`
+	ID     string          `yaml:"id"`
+	Type   string          `yaml:"type"`
+	To     []string        `yaml:"to"`
+	Config json.RawMessage `yaml:"config"`
 }
 
-func (n *NodeConfig) UnmarshalJSON(data []byte) error {
+func (n *NodeConfig) UnmarshalYAML(data []byte) error {
 	idStruct := struct {
-		ID string `json:"id"`
-		To []string
+		ID string   `yaml:"id"`
+		To []string `yaml:"to"`
 	}{}
-	if err := json.Unmarshal(data, &idStruct); err != nil {
-		return err
+	if err := yaml.Unmarshal(data, &idStruct); err != nil {
+		return fmt.Errorf("error unmarshalling idStruct: %w", err)
 	}
-	mm := make(map[string]json.RawMessage)
-	if err := json.Unmarshal(data, &mm); err != nil {
-		return err
+	mm := make(map[string]any)
+	if err := yaml.UnmarshalWithOptions(data, &mm, yaml.UseOrderedMap()); err != nil {
+		return fmt.Errorf("error unmarshalling node map: %w", err)
 	}
 	delete(mm, "id")
 	delete(mm, "to")
@@ -48,16 +49,21 @@ func (n *NodeConfig) UnmarshalJSON(data []byte) error {
 		n.ID = idStruct.ID
 		n.To = idStruct.To
 		n.Type = key
-		n.Config = val
+		cfg, err := yaml.Marshal(val)
+		if err != nil {
+			return fmt.Errorf("error marshalling config: %w", err)
+		}
+		n.Config = cfg
 
 		return nil
 	}
 	return fmt.Errorf("missing type in node config")
 }
 
-func (n *NodeConfig) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]any{
+func (n *NodeConfig) MarshalYAML() ([]byte, error) {
+	return yaml.Marshal(map[string]any{
 		"id":   n.ID,
+		"to":   n.To,
 		n.Type: n.Config,
 	})
 }

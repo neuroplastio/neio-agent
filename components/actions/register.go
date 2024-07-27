@@ -11,4 +11,5 @@ func Register(reg flowapi.Registry) {
 	reg.MustRegisterAction(TapHold{})
 	reg.MustRegisterAction(Lock{})
 	reg.MustRegisterAction(Signal{})
+	reg.MustRegisterAction(Repeat{})
 }

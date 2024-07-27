@@ -33,7 +33,7 @@ func (i InputNodeType) CreateNode(p flowapi.NodeProvider) (flowapi.Node, error) 
 }
 
 type inputConfig struct {
-	Addr Address `json:"addr"`
+	Addr Address `yaml:"addr"`
 }
 
 type InputNode struct {

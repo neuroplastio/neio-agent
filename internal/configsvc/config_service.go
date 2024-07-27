@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/ghodss/yaml"
+	"github.com/goccy/go-yaml"
 	"go.uber.org/zap"
 )
 
@@ -146,13 +146,9 @@ func readConfig[T any](path string, def T) (T, error) {
 		return def, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	jsonB, err := yaml.YAMLToJSON(yamlB)
+	err = yaml.UnmarshalWithOptions(yamlB, &def)
 	if err != nil {
-		return def, fmt.Errorf("failed to convert yaml to json: %w", err)
-	}
-	err = json.Unmarshal(jsonB, &def)
-	if err != nil {
-		return def, fmt.Errorf("failed to unmarshal json: %w", err)
+		return def, fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
 	return def, nil
 }
