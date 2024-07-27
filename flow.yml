@@ -20,7 +20,7 @@ nodes:
   - id: mods
     to: [layer]
     bind:
-      interrupt: [kb.*, con.*, dsk.Wheel]
+      interrupt: [btn.*, kb.*, con.*, dsk.Wheel]
       map:
         F16: $layer.switch("control")
         F17: $layer.switch("sym")
@@ -46,10 +46,10 @@ nodes:
         J: DownArrow
         K: UpArrow
         L: RightArrow
-        N: LeftControl+H
+        N: mod(LeftControl, H)
         M: repeat(dsk.Wheel=-1, 100ms, 12ms)
         Comma: repeat(dsk.Wheel=+1, 100ms, 12ms)
-        Period: LeftControl+L
+        Period: mod(LeftControl, L)
         S: repeat(dsk.X=-1, 20ms, 1ms)
         F: repeat(dsk.X=+1, 20ms, 1ms)
         E: repeat(dsk.Y=-1, 20ms, 1ms)
@@ -120,7 +120,7 @@ nodes:
     to: [split]
     bind:
       map:
-        F18: RightGui+Enter
+        F18: mod(RightGui, Enter)
 
   - id: split
     to: [out-kb, out-pointer]

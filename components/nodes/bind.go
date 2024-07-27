@@ -47,7 +47,7 @@ type bindItem struct {
 
 type bindConfig struct {
 	Map       flowdsl.YAMLExpressionMap `yaml:"map"`
-	Interrupt []string                  `yaml:"interruptWith"`
+	Interrupt []string                  `yaml:"interrupt"`
 }
 
 func (b *Bind) Configure(c flowapi.NodeConfigurator) error {
@@ -55,6 +55,7 @@ func (b *Bind) Configure(c flowapi.NodeConfigurator) error {
 		Interrupt: []string{
 			"kb.*",
 			"con.*",
+			"btn.*",
 			"dsk.Wheel",
 		},
 	}
