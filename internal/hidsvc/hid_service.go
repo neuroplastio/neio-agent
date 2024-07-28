@@ -815,7 +815,7 @@ func (s *Service) ListInputDevices() ([]HidInputDevice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)
 	}
-	return nil, nil
+	return devices, nil
 }
 
 func (s *Service) GetInputDevice(addr Address) (HidInputDevice, error) {

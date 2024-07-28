@@ -97,9 +97,11 @@ func (g *InputNode) Run(ctx context.Context, up flowapi.Stream, down flowapi.Str
 					continue
 				}
 				event := g.source.OnReport(report)
-				down.Broadcast(flowapi.Event{
-					HID: event,
-				})
+				if !event.IsEmpty() {
+					down.Broadcast(flowapi.Event{
+						HID: event,
+					})
+				}
 			case <-ctx.Done():
 				return
 			}

@@ -64,6 +64,8 @@ func (u usageValues) GetValue(bits bits.Bits, usage Usage) int32 {
 		return int32(int8(bits.Uint8(index)))
 	case u.size == 16:
 		return int32(int16(bits.Uint16(index)))
+	case u.size == 24:
+		return int32(int16(bits.Uint24(index)))
 	case u.size == 32:
 		return int32(bits.Uint32(index))
 	default:
@@ -82,6 +84,8 @@ func (u usageValues) SetValue(bits bits.Bits, usage Usage, value int32) {
 		bits.SetUint8(index, uint8(int8(value)))
 	case u.size == 16:
 		bits.SetUint16(index, uint16(int16(value)))
+	case u.size == 24:
+		bits.SetUint24(index, uint16(int16(value)))
 	case u.size == 32:
 		bits.SetUint32(index, uint32(value))
 	}
@@ -95,7 +99,7 @@ func NewUsageValuesItems(dataItems []hiddesc.DataItem) map[int]UsageValues {
 			continue
 		}
 		switch item.ReportSize {
-		case 8, 16, 32:
+		case 8, 16, 24, 32:
 		default:
 			// not a usage-value data item
 			continue

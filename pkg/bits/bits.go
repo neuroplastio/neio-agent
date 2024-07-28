@@ -22,25 +22,26 @@ type Scanner struct {
 func (s *Scanner) Next(bitSize int) Bits {
 	byteStart := s.bitOffset / 8
 	bitStart := s.bitOffset % 8
-	bitEnd := (s.bitOffset + bitSize) % 8
 	byteSize := bitSize / 8
-	missingBits := uint8(bitSize % 8)
+	missingBits := 8 - uint8(bitSize%8)
+	if missingBits == 8 {
+		missingBits = 0
+	}
 	if missingBits > 0 {
 		byteSize++
 	}
 	s.bitOffset += bitSize
-	if bitEnd == 0 {
+	if bitStart == 0 {
 		return Bits{
 			bytes:       s.bytes[byteStart : byteStart+byteSize],
 			missingBits: missingBits,
 		}
 	}
 	result := make([]byte, byteSize)
-	for i := 0; i < byteSize-1; i++ {
+	for i := 0; i < byteSize; i++ {
 		result[i] = s.bytes[byteStart+i] << bitStart
-		result[i+1] |= s.bytes[byteStart+i] >> (8 - bitStart)
+		result[i] |= s.bytes[byteStart+i+1] >> (8 - bitStart)
 	}
-	result[byteSize-1] = s.bytes[byteStart] << bitStart
 	return Bits{
 		bytes:       result,
 		missingBits: missingBits,
@@ -190,6 +191,14 @@ func (b Bits) EachUint16(f func(int, uint16) bool) {
 	}
 }
 
+func (b Bits) EachUint24(f func(int, uint16) bool) {
+	for i := 0; i < len(b.bytes); i += 3 {
+		if !f(i, binary.LittleEndian.Uint16(b.bytes[i:i+3])) {
+			return
+		}
+	}
+}
+
 func (b Bits) EachUint32(f func(int, uint32) bool) {
 	for i := 0; i < len(b.bytes); i += 4 {
 		if !f(i, binary.LittleEndian.Uint32(b.bytes[i:i+4])) {
@@ -206,8 +215,13 @@ func (b Bits) SetUint16(index int, value uint16) {
 	binary.LittleEndian.PutUint16(b.bytes[index*2:(index+1)*2], value)
 }
 
+func (b Bits) SetUint24(index int, value uint16) {
+	// TODO: support 3 byte integers
+	binary.LittleEndian.PutUint16(b.bytes[index*3:(index+1)*3], value)
+}
+
 func (b Bits) SetUint32(index int, value uint32) {
-	binary.LittleEndian.PutUint32(b.bytes[index*4:(index+1)*2], value)
+	binary.LittleEndian.PutUint32(b.bytes[index*4:(index+1)*4], value)
 }
 
 func (b Bits) Uint8(index int) uint8 {
@@ -216,6 +230,10 @@ func (b Bits) Uint8(index int) uint8 {
 
 func (b Bits) Uint16(index int) uint16 {
 	return binary.LittleEndian.Uint16(b.bytes[index*2 : (index+1)*2])
+}
+
+func (b Bits) Uint24(index int) uint16 {
+	return binary.LittleEndian.Uint16(b.bytes[index*3 : (index+1)*3])
 }
 
 func (b Bits) Uint32(index int) uint32 {
@@ -292,15 +310,14 @@ func ConcatBits(l, r Bits) Bits {
 	}
 	result := make([]byte, size)
 	copy(result, l.bytes)
-	ri := 0
-	for {
-		i := len(l.bytes) - 1 + ri
+	i := len(l.bytes) - 1
+	for ri := 0; ri < len(r.bytes); ri++ {
 		result[i] |= r.bytes[ri] >> (8 - l.missingBits)
 		if i == size-1 {
 			break
 		}
 		result[i+1] = r.bytes[ri] << l.missingBits
-		ri++
+		i++
 	}
 	return Bits{
 		bytes:       result,

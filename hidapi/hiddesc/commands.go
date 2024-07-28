@@ -135,10 +135,6 @@ func cmdCollection(state *reportDescriptorState, payload []byte) error {
 		UsageID:   state.local.usage[0],
 	}
 	if state.collection != nil {
-		state.collection.Items = append(state.collection.Items, MainItem{
-			Type:       MainItemTypeCollection,
-			Collection: &c,
-		})
 		state.collectionStack = append(state.collectionStack, *state.collection)
 	}
 	state.collection = &c
@@ -157,9 +153,13 @@ func cmdEndCollection(state *reportDescriptorState, payload []byte) error {
 		state.collections = append(state.collections, *state.collection)
 		state.collection = nil
 	} else {
-		c := state.collectionStack[len(state.collectionStack)-1]
+		parent := state.collectionStack[len(state.collectionStack)-1]
+		parent.Items = append(parent.Items, MainItem{
+			Type:       MainItemTypeCollection,
+			Collection: state.collection,
+		})
 		state.collectionStack = state.collectionStack[:len(state.collectionStack)-1]
-		state.collection = &c
+		state.collection = &parent
 	}
 
 	state.local = &localState{}

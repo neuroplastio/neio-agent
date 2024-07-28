@@ -35,13 +35,6 @@ func (r *ReportDecoder) Decode(data []byte) (Report, bool) {
 }
 
 func EncodeReport(report Report) bits.Bits {
-	size := 0
-	for _, field := range report.Fields {
-		size += field.Len()
-	}
-	if report.ID != 0 {
-		size++
-	}
 	// TODO: optimize allocations
 	allBits := bits.Bits{}
 	if report.ID != 0 {
@@ -50,6 +43,5 @@ func EncodeReport(report Report) bits.Bits {
 	for _, field := range report.Fields {
 		allBits = bits.ConcatBits(allBits, field)
 	}
-	// TODO: warn when not byte-aligned
 	return allBits
 }

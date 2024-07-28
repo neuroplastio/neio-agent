@@ -106,3 +106,48 @@ func TestBitSet(t *testing.T) {
 	}
 
 }
+
+func TestConcat(t *testing.T) {
+	values := []string{
+		"00010011",
+		"0",
+		"0110010",
+		"0010010",
+		"01",
+		"0010010",
+		"00011000",
+		"00011101",
+		"00001110",
+		"00000000",
+		"00000000",
+		"00000000",
+	}
+	allBits := New([]byte{}, 0)
+	for _, value := range values {
+		bits, err := NewBitSetFromString(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%s + %s", allBits.String(), bits.String())
+		allBits = ConcatBits(allBits, bits)
+	}
+	expected := "00010011 00110010 00100100 10010010 00011000 00011101 00001110 00000000 00000000 00000000"
+	if allBits.String() != expected {
+		t.Errorf("Bits not equal")
+		t.Error(allBits.String())
+		t.Error(expected)
+	}
+	scanner := NewScanner(allBits.Bytes())
+	for i, value := range values {
+		bits := scanner.Next(len(value))
+		if bits.String() != value {
+			t.Errorf("%d: expected %s, got %s", i, value, bits.String())
+			t.Error(bits.String())
+			t.Error(New(bits.Bytes(), 0).String())
+		}
+		if bits.Len() != len(value) {
+			t.Errorf("Expected %d bits, got %d", len(value), bits.Len())
+			t.Error(value)
+		}
+	}
+}

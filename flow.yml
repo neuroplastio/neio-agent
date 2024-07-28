@@ -1,21 +1,24 @@
 nodes:
-  - id: keychron
-    to: [test]
-    input:
-      addr: linux/3434:fe0e.0
-  - id: mouse
-    to: [mods]
-    input:
-      addr: linux/046d:c547.0
+  # - id: keychron
+  #   to: [test]
+  #   input:
+  #     addr: linux/3434:fe0e.0
+  # - id: mouse
+  #   to: [mods]
+  #   input:
+  #     addr: linux/046d:c547.0
   - id: moonlander
     to: [mods]
     input:
       addr: linux/3297:1969.0
-
-  - id: test
-    to: [split]
-    bind:
-      T: tapHold(T, H)
+  - id: wacom
+    to: [out-wacom]
+    input:
+      addr: linux/056a:0392.0
+  # - id: magic-trackpad
+  #   to: [out-magic]
+  #   input:
+  #     addr: linux/05ac:0265
 
   - id: mods
     to: [layer]
@@ -123,9 +126,8 @@ nodes:
         F18: mod(RightGui, Enter)
 
   - id: split
-    to: [out-kb, out-pointer]
+    to: [out-kb]
     split:
-      out-pointer: [dsk, btn]
       out-kb: []
 
   - id: out-kb
@@ -134,8 +136,18 @@ nodes:
       descriptorFrom:
         - linux/3297:1969.0
         - linux/3297:1969.3
-  - id: out-pointer
+  # - id: out-pointer
+  #   output:
+  #     addr: linux/uhid:neio-pointer
+  #     descriptorFrom:
+  #       - linux/046d:c547.0
+  - id: out-wacom
     output:
-      addr: linux/uhid:neio-pointer
+      addr: linux/uhid:neio-wacom
       descriptorFrom:
-        - linux/046d:c547.0
+        - linux/056a:0392.0
+  # - id: out-magic
+  #   output:
+  #     addr: linux/uhid:neio-magic
+  #     descriptorFrom:
+  #       - linux/05ac:0265

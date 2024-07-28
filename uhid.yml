@@ -7,7 +7,11 @@ uhid:
     name: neio-pointer
     vendorId: 0x6666
     productId: 0x6667
-  - id: neio-consumer
-    name: neio-consumer
+  - id: neio-wacom
+    name: neio-wacom
     vendorId: 0x6666
     productId: 0x6668
+  - id: neio-magic
+    name: neio-magic
+    vendorId: 0x6666
+    productId: 0x6669

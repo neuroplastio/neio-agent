@@ -25,7 +25,6 @@ type DescriptorDecoder struct {
 	err     error
 	options descriptorDecoderOptions
 	buf     []byte
-	size    int
 	state   *reportDescriptorState
 }
 
@@ -130,11 +129,9 @@ var commandMap = map[Tag]commandFn{
 	TagDelimiter:         cmdDelimiter,
 }
 
-func (d *DescriptorDecoder) parseBytes() error {
-	for d.size > 0 {
-		b := d.buf[0]
-		d.buf = d.buf[1:]
-		d.size--
+func (d *DescriptorDecoder) parseBytes(size int) error {
+	for i := 0; i < size; i++ {
+		b := d.buf[i]
 
 		switch {
 		case d.state.command == 0:
@@ -189,13 +186,12 @@ func (d *DescriptorDecoder) Decode() (ReportDescriptor, error) {
 	for {
 		size, err := d.reader.Read(d.buf)
 		if size > 0 {
-			d.size = size
-			err := d.parseBytes()
+			err := d.parseBytes(size)
 			if err != nil {
 				return ReportDescriptor{}, err
 			}
 		}
-		if size == 0 || errors.Is(err, io.EOF) {
+		if errors.Is(err, io.EOF) {
 			return d.state.descriptor(), nil
 		}
 		if err != nil {
