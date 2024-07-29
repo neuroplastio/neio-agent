@@ -1,6 +1,8 @@
 package hidapi
 
 import (
+	"fmt"
+
 	"github.com/neuroplastio/neio-agent/hidapi/hiddesc"
 	"github.com/neuroplastio/neio-agent/pkg/bits"
 )

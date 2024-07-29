@@ -80,6 +80,21 @@ func (t *EventSink) initializeStates() {
 		t.reports[rd.ID] = report
 		t.usageSets[rd.ID] = NewUsageSets(rd.DataItems)
 		for idx, usageSet := range t.usageSets[rd.ID] {
+			if unordered, ok := usageSet.(UnorderedUsageSet); ok {
+				t.log.Debug("Unordered Usage Set",
+					zap.Uint8("reportId", rd.ID),
+					zap.Int("itemIdx", idx),
+					zap.String("page", fmt.Sprintf("%02x", usageSet.UsagePage())),
+					zap.Any("usageIDs", unordered.UsageIDs()),
+				)
+				if _, ok := t.usageSetMap[usageSet.UsagePage()]; !ok {
+					t.usageSetMap[usageSet.UsagePage()] = make(map[uint16]itemAddress)
+				}
+				for _, usageID := range unordered.UsageIDs() {
+					t.usageSetMap[usageSet.UsagePage()][usageID] = itemAddress{reportID: rd.ID, itemIdx: idx}
+				}
+				continue
+			}
 			if ordered, ok := usageSet.(OrderedUsageSet); ok {
 				t.log.Debug("Ordered Usage Set",
 					zap.Uint8("reportId", rd.ID),
@@ -95,21 +110,6 @@ func (t *EventSink) initializeStates() {
 					dataItem: rd.DataItems[idx],
 				}
 				t.usageSetRanges[usageSet.UsagePage()] = append(t.usageSetRanges[usageSet.UsagePage()], rang)
-				continue
-			}
-			if unordered, ok := usageSet.(UnorderedUsageSet); ok {
-				t.log.Debug("Unordered Usage Set",
-					zap.Uint8("reportId", rd.ID),
-					zap.Int("itemIdx", idx),
-					zap.String("page", fmt.Sprintf("%02x", usageSet.UsagePage())),
-					zap.Any("usageIDs", unordered.UsageIDs()),
-				)
-				if _, ok := t.usageSetMap[usageSet.UsagePage()]; !ok {
-					t.usageSetMap[usageSet.UsagePage()] = make(map[uint16]itemAddress)
-				}
-				for _, usageID := range unordered.UsageIDs() {
-					t.usageSetMap[usageSet.UsagePage()][usageID] = itemAddress{reportID: rd.ID, itemIdx: idx}
-				}
 				continue
 			}
 			t.log.Error("Unknown Usage Set type")
@@ -182,7 +182,11 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		}
 		return reports[reportMap[reportID]]
 	}
-	t.log.Debug("Event", zap.String("event", e.String()))
+	for _, usageEvent := range e.Usages() {
+		if usageEvent.Activate != nil {
+			t.log.Debug("UsageEvent", zap.String("event", usageEvent.String()))
+		}
+	}
 	for _, usageEvent := range e.Usages() {
 		usage := usageEvent.Usage
 		var (
@@ -192,11 +196,11 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		case usageEvent.Activate != nil:
 			if a, ok := t.usageSetMap[usage.Page()][usage.ID()]; ok {
 				addr = a
-				continue
+				break
 			}
 			if rang, ok := t.getUsageSet(usage); ok {
 				addr = rang.addr
-				continue
+				break
 			}
 			t.log.Warn("Usage has no matching report",
 				zap.String("usage", usage.String()),
@@ -234,9 +238,6 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 						time.Sleep(t.activationMinInterval - sinceLast)
 					}
 					t.lastActivation = time.Now()
-					if addr.reportID == 1 {
-						t.log.Debug("Activation", zap.String("usage", usage.String()))
-					}
 				}
 			}
 		case usageEvent.Activate != nil && !*usageEvent.Activate:
@@ -256,9 +257,6 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 						time.Sleep(t.activationMinInterval - sinceLast)
 					}
 					t.lastActivation = time.Now()
-					if addr.reportID == 1 {
-						t.log.Debug("dectivation", zap.String("usage", usage.String()))
-					}
 				}
 			}
 		case usageEvent.Delta != nil:
@@ -268,7 +266,6 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 	}
 
 	for _, report := range reports {
-		t.log.Debug("Report", zap.Any("report", report.FieldsStrings()))
 		t.reports[report.ID] = t.stripRelativeValues(report.Clone())
 	}
 

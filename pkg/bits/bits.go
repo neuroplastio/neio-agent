@@ -279,7 +279,10 @@ func NewBitSetFromString(s string) (Bits, error) {
 
 func NewZeros(bitSize int) Bits {
 	byteSize := bitSize / 8
-	missingBits := uint8(bitSize % 8)
+	missingBits := 8 - uint8(bitSize%8)
+	if missingBits == 8 {
+		missingBits = 0
+	}
 	if missingBits > 0 {
 		byteSize++
 	}
