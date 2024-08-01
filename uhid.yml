@@ -9,8 +9,8 @@ uhid:
     productId: 0x6667
   - id: neio-wacom
     name: neio-wacom
-    vendorId: 0x6666
-    productId: 0x6668
+    vendorId: 0x056a
+    productId: 0x0393
   - id: neio-magic
     name: neio-magic
     vendorId: 0x6666

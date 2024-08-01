@@ -207,6 +207,13 @@ func (b Bits) EachUint32(f func(int, uint32) bool) {
 	}
 }
 
+// TODO: support variable bit sizes for integers
+
+func (b Bits) SetUint7(index int, value uint8) {
+	// TODO: this breaks with index > 0
+	b.bytes[index] = value & 0x7F
+}
+
 func (b Bits) SetUint8(index int, value uint8) {
 	b.bytes[index] = value
 }
@@ -222,6 +229,11 @@ func (b Bits) SetUint24(index int, value uint16) {
 
 func (b Bits) SetUint32(index int, value uint32) {
 	binary.LittleEndian.PutUint32(b.bytes[index*4:(index+1)*4], value)
+}
+
+func (b Bits) Uint7(index int) uint8 {
+	// TODO: this breaks with index > 0
+	return b.bytes[index] & 0x7F
 }
 
 func (b Bits) Uint8(index int) uint8 {

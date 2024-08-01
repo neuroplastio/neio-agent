@@ -375,16 +375,6 @@ func (s *Service) openInputDevice(ctx context.Context, addr Address) (*openedInp
 	if err != nil {
 		return nil, fmt.Errorf("failed to open device: %w", err)
 	}
-	initialReport, err := handle.GetInputReport()
-	if err != nil {
-		s.log.Error("failed to get initial report", zap.Error(err), zap.String("addr", addr.String()))
-	}
-	if len(initialReport) > 0 {
-		s.inputBus.Publish(ctx, InputBusKey{
-			Type: InputReportRead,
-			Addr: addr,
-		}, InputDeviceEvent{Report: initialReport})
-	}
 	sub := s.inputBus.Subscribe(ctx, InputBusKey{
 		Type: InputReportWrite,
 		Addr: addr,

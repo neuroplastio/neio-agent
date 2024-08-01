@@ -59,7 +59,7 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 		return fmt.Errorf("failed to get output device %s: %w", cfg.Addr, err)
 	}
 	desc := hiddesc.ReportDescriptor{}
-	outputID := uint8(1)
+	idMap := make(map[uint8]uint8)
 	for _, addr := range cfg.DescriptorFrom {
 		inputDev, err := o.hid.GetInputDevice(addr)
 		if err != nil {
@@ -70,14 +70,19 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 			return fmt.Errorf("failed to decode HID report descriptor: %w", err)
 		}
 		inputSet := hidapi.NewDataItemSet(inputDesc)
-		ids := make(map[uint8]uint8, len(inputSet.Reports()))
 		for _, rd := range inputSet.Reports() {
-			ids[rd.ID] = outputID
-			outputID++
+			id := rd.ID
+			for {
+				if _, ok := idMap[id]; !ok {
+					idMap[rd.ID] = id
+					break
+				}
+				id++
+			}
 		}
 		inputDesc.Walk(func(item hiddesc.MainItem) bool {
 			if item.DataItem != nil {
-				item.DataItem.ReportID = ids[item.DataItem.ReportID]
+				item.DataItem.ReportID = idMap[item.DataItem.ReportID]
 			}
 			return true
 		})

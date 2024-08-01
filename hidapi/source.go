@@ -58,11 +58,11 @@ func (r *EventSource) OnReport(report Report) *Event {
 		}
 		reportField := report.Fields[i]
 		lastReportField := lastReport.Fields[i]
-		if reportField.Equal(lastReportField) {
-			continue
-		}
 		usageSet, ok := r.usageSets[report.ID][i]
 		if ok {
+			if reportField.Equal(lastReportField) {
+				continue
+			}
 			activated, deactivated := UsageSetDiff(usageSet, lastReport.Fields[i], report.Fields[i])
 			event.Activate(activated...)
 			event.Deactivate(deactivated...)
@@ -72,12 +72,19 @@ func (r *EventSource) OnReport(report Report) *Event {
 		if ok {
 			usages := values.Usages()
 			for _, usage := range usages {
-				t0 := values.GetValue(lastReport.Fields[i], usage)
-				t1 := values.GetValue(report.Fields[i], usage)
-				if t0 == t1 {
-					continue
+				if item.Flags.IsRelative() {
+					if reportField.Equal(lastReportField) {
+						continue
+					}
+					t0 := values.GetValue(lastReport.Fields[i], usage)
+					t1 := values.GetValue(report.Fields[i], usage)
+					if t0 == t1 {
+						continue
+					}
+					event.SetDelta(usage, t1-t0)
+				} else {
+					event.SetValue(usage, values.GetValue(report.Fields[i], usage))
 				}
-				event.SetDelta(usage, t1-t0)
 			}
 			continue
 		}

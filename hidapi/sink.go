@@ -182,11 +182,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		}
 		return reports[reportMap[reportID]]
 	}
-	for _, usageEvent := range e.Usages() {
-		if usageEvent.Activate != nil {
-			t.log.Debug("UsageEvent", zap.String("event", usageEvent.String()))
-		}
-	}
+	t.log.Debug("Event", zap.String("event", e.String()))
 	for _, usageEvent := range e.Usages() {
 		usage := usageEvent.Usage
 		var (
@@ -206,7 +202,7 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 				zap.String("usage", usage.String()),
 			)
 			continue
-		case usageEvent.Delta != nil:
+		case usageEvent.Delta != nil || usageEvent.Value != nil:
 			a, ok := t.usageValuesIndex[usage]
 			if !ok {
 				t.log.Warn("Usage has no matching report",
@@ -262,6 +258,8 @@ func (t *EventSink) OnEvent(e *Event) []Report {
 		case usageEvent.Delta != nil:
 			current := t.usageValues[addr.reportID][addr.itemIdx].GetValue(report.Fields[addr.itemIdx], usage)
 			t.usageValues[addr.reportID][addr.itemIdx].SetValue(report.Fields[addr.itemIdx], usage, current+*usageEvent.Delta)
+		case usageEvent.Value != nil:
+			t.usageValues[addr.reportID][addr.itemIdx].SetValue(report.Fields[addr.itemIdx], usage, *usageEvent.Value)
 		}
 	}
 

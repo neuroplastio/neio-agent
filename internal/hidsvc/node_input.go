@@ -72,6 +72,8 @@ func (g *InputNode) Run(ctx context.Context, up flowapi.Stream, down flowapi.Str
 	read := make(chan []byte)
 	write := make(chan []byte)
 	sub := down.Subscribe(ctx)
+	// TODO: query GetInputReport for each reportID and send through the pipeline
+	//   (and simplify how we open and close the device)
 	go func() {
 		defer close(write)
 		for {

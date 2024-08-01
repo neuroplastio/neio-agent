@@ -18,7 +18,7 @@ nodes:
   # - id: magic-trackpad
   #   to: [out-magic]
   #   input:
-  #     addr: linux/05ac:0265
+  #     addr: linux/05ac:0265.1
 
   - id: mods
     to: [layer]
@@ -128,7 +128,7 @@ nodes:
   - id: split
     to: [out-kb]
     split:
-      out-kb: []
+      out-kb: [kb, con]
 
   - id: out-kb
     output:
@@ -146,8 +146,8 @@ nodes:
       addr: linux/uhid:neio-wacom
       descriptorFrom:
         - linux/056a:0392.0
-  # - id: out-magic
+
   #   output:
   #     addr: linux/uhid:neio-magic
   #     descriptorFrom:
-  #       - linux/05ac:0265
+  #       - linux/05ac:0265.1

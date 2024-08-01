@@ -19,6 +19,7 @@ require (
 	github.com/fatih/color v1.10.0 // indirect
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jkeiser/iter v0.0.0-20200628201005-c8aa0ae784d1 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
@@ -39,6 +40,8 @@ require (
 	github.com/dgraph-io/badger v1.6.2
 	github.com/goccy/go-yaml v1.12.0
 	github.com/iancoleman/strcase v0.3.0
+	github.com/iovisor/gobpf v0.2.1-0.20221005153822-16120a1bf4d4
+	github.com/jochenvg/go-udev v0.0.0-20240801134859-b65ed646224b
 	github.com/karalabe/hid v1.0.0
 	github.com/openstadia/go-usb-gadget v0.0.0-20231115171102-aebd56bbb965
 	github.com/psanford/uhid v0.0.0-20210516231035-a7c1e481958d

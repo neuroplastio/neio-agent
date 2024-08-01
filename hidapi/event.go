@@ -33,6 +33,7 @@ func NewEvent() *Event {
 type UsageEvent struct {
 	Usage    Usage
 	Activate *bool
+	Value    *int32
 	Delta    *int32
 }
 
@@ -44,7 +45,13 @@ func (u UsageEvent) String() string {
 			return "-" + u.Usage.String()
 		}
 	} else if u.Delta != nil {
-		return fmt.Sprintf("%s=%d", u.Usage.String(), *u.Delta)
+		if *u.Delta > 0 {
+			return fmt.Sprintf("%s+=%d", u.Usage.String(), *u.Delta)
+		} else {
+			return fmt.Sprintf("%s-=%d", u.Usage.String(), -*u.Delta)
+		}
+	} else if u.Value != nil {
+		return fmt.Sprintf("%s=%d", u.Usage.String(), *u.Value)
 	}
 	return "(empty)"
 }
@@ -132,6 +139,16 @@ func (h *Event) Deactivate(usages ...Usage) {
 		}
 		h.addUsage(diff)
 	}
+	h.mu.Unlock()
+}
+
+func (h *Event) SetValue(usage Usage, value int32) {
+	h.mu.Lock()
+	event := UsageEvent{
+		Usage: usage,
+		Value: ptr(value),
+	}
+	h.addUsage(event)
 	h.mu.Unlock()
 }
 

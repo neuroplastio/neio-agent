@@ -64,6 +64,13 @@ func NewToggleActionHandler(usages ...hidapi.Usage) ActionHandler {
 	}
 }
 
+func NewSetValueHandler(usage hidapi.Usage, value int32) ActionHandler {
+	return func(ac ActionContext) ActionFinalizer {
+		ac.HIDEvent().SetValue(usage, value)
+		return nil
+	}
+}
+
 func NewSetDeltaHandler(usage hidapi.Usage, value int32) ActionHandler {
 	return func(ac ActionContext) ActionFinalizer {
 		ac.HIDEvent().SetDelta(usage, value)

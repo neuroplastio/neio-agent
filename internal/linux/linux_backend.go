@@ -8,8 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/citilinkru/libudev"
-	"github.com/citilinkru/libudev/matcher"
+	"github.com/jochenvg/go-udev"
 	"github.com/neuroplastio/neio-agent/internal/configsvc"
 	"github.com/neuroplastio/neio-agent/internal/hidsvc"
 	"github.com/psanford/uhid"
@@ -46,6 +45,10 @@ type Backend struct {
 	hidDevices  *xsync.MapOf[HidAddress, hid.DeviceInfo]
 	uhidDevices *xsync.MapOf[string, UhidDeviceConfig]
 
+	openedInputs *xsync.MapOf[HidAddress, *hidDeviceHandle]
+
+	udev *udev.Udev
+
 	ready chan struct{}
 
 	publisher hidsvc.BackendPublisher
@@ -77,13 +80,14 @@ func NewBackend(log *zap.Logger, configSvc *configsvc.Service, uhidPath string, 
 	}
 
 	return &Backend{
-		options:     options,
-		log:         log,
-		config:      configSvc,
-		uhidPath:    uhidPath,
-		ready:       make(chan struct{}),
-		hidDevices:  xsync.NewMapOf[HidAddress, hid.DeviceInfo](),
-		uhidDevices: xsync.NewMapOf[string, UhidDeviceConfig](),
+		options:      options,
+		log:          log,
+		config:       configSvc,
+		uhidPath:     uhidPath,
+		ready:        make(chan struct{}),
+		hidDevices:   xsync.NewMapOf[HidAddress, hid.DeviceInfo](),
+		uhidDevices:  xsync.NewMapOf[string, UhidDeviceConfig](),
+		openedInputs: xsync.NewMapOf[HidAddress, *hidDeviceHandle](),
 	}
 }
 
@@ -104,7 +108,7 @@ func (b *Backend) Ready() <-chan struct{} {
 
 func (b *Backend) Start(ctx context.Context, publisher hidsvc.BackendPublisher) error {
 	hid.Init()
-	defer hid.Exit()
+	b.udev = &udev.Udev{}
 
 	b.publisher = publisher
 
@@ -291,58 +295,61 @@ func (b *Backend) OpenInput(id string) (hidsvc.BackendInputDeviceHandle, error) 
 	if !ok {
 		return nil, fmt.Errorf("device not found: %s", id)
 	}
-	hidDev, err := hid.OpenPath(dev.Path)
+	hidDevHandle, err := hid.OpenPath(dev.Path)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: fork the lib, optimize this lookup (:sadge:). All Go udev libs suck in one way or another
-	start := time.Now()
-	b.log.Debug("Scanning udev", zap.String("path", dev.Path))
-	scanner := libudev.NewScanner()
-	m := matcher.NewMatcher()
-	m.AddRule(matcher.NewRuleEnv("ID_USB_DRIVER", "hid"))
-	m.AddRule(matcher.NewRuleEnv("ID_USB_VENDOR_ID", fmt.Sprintf("%04x", dev.VendorID)))
-	m.AddRule(matcher.NewRuleEnv("ID_USB_MODEL_ID", fmt.Sprintf("%04x", dev.ProductID)))
-	m.AddRule(matcher.NewRuleEnv("ID_USB_INTERFACE_NUM", fmt.Sprintf("%02d", dev.InterfaceNbr)))
-	err, devices := scanner.ScanDevices()
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan devices: %w", err)
+	hidrawDev := b.udev.NewDeviceFromSubsystemSysname("hidraw", filepath.Base(dev.Path))
+	if hidrawDev == nil {
+		return nil, fmt.Errorf("hidraw device %s not found in udev", dev.Path)
 	}
-	b.log.Debug("Scanned udev", zap.Duration("duration", time.Since(start)))
-	matched := m.Match(devices)
-
-	var syspath string
-	for _, dev := range matched {
-		b.log.Debug("found device", zap.String("syspath", dev.Devpath))
-		if !strings.HasPrefix(filepath.Base(dev.Devpath), "event") {
+	hidDev := hidrawDev.Parent()
+	e := b.udev.NewEnumerate()
+	e.AddMatchSubsystem("input")
+	e.AddMatchParent(hidDev)
+	inputs, err := e.Devices()
+	if err != nil {
+		hidDevHandle.Close()
+		return nil, err
+	}
+	var removedInputs []string
+	for _, inputDev := range inputs {
+		syspath := inputDev.Syspath()
+		if filepath.Base(filepath.Dir(syspath)) != "input" {
+			b.log.Debug("skipping device", zap.String("devnode", inputDev.Syspath()))
 			continue
 		}
-		syspath = dev.Devpath
-		break
-	}
-	if syspath == "" {
-		return nil, fmt.Errorf("device syspath not found")
-	}
-	b.log.Debug("removing device",
-		zap.String("syspath", syspath),
-		zap.String("id", fmt.Sprintf("%04x:%04x:%d", dev.VendorID, dev.ProductID, dev.InterfaceNbr)),
-	)
-	err = os.WriteFile(syspath+"/uevent", []byte("remove"), 0644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove device: %w", err)
+		err := os.WriteFile(syspath+"/uevent", []byte("remove"), 0644)
+		if err != nil {
+			hidDevHandle.Close()
+			return nil, fmt.Errorf("failed to attach the device: %w", err)
+		}
+		removedInputs = append(removedInputs, syspath)
 	}
 
-	return &hidDeviceHandle{
-		log:     b.log,
-		hid:     hidDev,
-		syspath: syspath,
-	}, nil
+	handle := &hidDeviceHandle{
+		log:           b.log,
+		hid:           hidDevHandle,
+		removedInputs: removedInputs,
+		onClose: func() {
+			for _, input := range removedInputs {
+				err := os.WriteFile(input+"/uevent", []byte("add"), 0644)
+				if err != nil {
+					b.log.Error("failed to detach the device", zap.Error(err))
+				}
+			}
+			b.openedInputs.Delete(addr)
+		},
+	}
+	b.openedInputs.Store(addr, handle)
+	return handle, nil
 }
 
 type hidDeviceHandle struct {
-	log     *zap.Logger
-	hid     *hid.Device
-	syspath string
+	log           *zap.Logger
+	hid           *hid.Device
+	removedInputs []string
+	onClose       func()
 }
 
 func (h *hidDeviceHandle) Read(buf []byte) (int, error) {
@@ -360,11 +367,7 @@ func (h *hidDeviceHandle) GetInputReport() ([]byte, error) {
 }
 
 func (h *hidDeviceHandle) Close() error {
-	h.log.Debug("closing device", zap.String("path", h.syspath))
-	err := os.WriteFile(h.syspath+"/uevent", []byte("add"), 0644)
-	if err != nil {
-		h.log.Error("failed to re-add device", zap.Error(err))
-	}
+	h.onClose()
 	return h.hid.Close()
 }
 
