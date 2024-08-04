@@ -12,7 +12,7 @@ import (
 	"github.com/neuroplastio/neio-agent/internal/configsvc"
 	"github.com/neuroplastio/neio-agent/internal/flowsvc"
 	"github.com/neuroplastio/neio-agent/internal/hidsvc"
-	"github.com/neuroplastio/neio-agent/internal/linux"
+	"github.com/neuroplastio/neio-agent/internal/hidsvc/linux"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"

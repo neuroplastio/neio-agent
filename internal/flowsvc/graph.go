@@ -329,6 +329,10 @@ func (r nodeConfigurator) SignalHandler(stmt flowdsl.Statement) (flowapi.SignalH
 	return r.registry.SignalHandler(r.ctx, stmt)
 }
 
+func (r nodeConfigurator) Context() context.Context {
+	return r.ctx
+}
+
 func (g *Graph) Configure(nodeID string, config json.RawMessage) error {
 	runner, ok := g.runners[nodeID]
 	if !ok {
@@ -353,6 +357,7 @@ func (g *Graph) Configure(nodeID string, config json.RawMessage) error {
 		configurator.ctx = newCtx
 		err = newNode.Configure(configurator)
 		if err != nil {
+			newCancel()
 			return fmt.Errorf("failed to configure node %s: %w", nodeID, err)
 		}
 		g.log.Debug("Replacing node", zap.String("node", nodeID))

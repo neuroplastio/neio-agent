@@ -57,6 +57,9 @@ func (u UsageEvent) String() string {
 }
 
 func (h *Event) IsEmpty() bool {
+	if h == nil {
+		return true
+	}
 	h.mu.Lock()
 	empty := len(h.usages) == 0
 	h.mu.Unlock()

@@ -133,7 +133,8 @@ nodes:
   - id: out-kb
     output:
       addr: linux/uhid:neio-kb
-      descriptorFrom:
+      descriptor:
+        inputs:
         - linux/3297:1969.0
         - linux/3297:1969.3
   # - id: out-pointer
@@ -144,8 +145,8 @@ nodes:
   - id: out-wacom
     output:
       addr: linux/uhid:neio-wacom
-      descriptorFrom:
-        - linux/056a:0392.0
+      descriptor:
+        inputs: [linux/056a:0392.0]
 
   #   output:
   #     addr: linux/uhid:neio-magic

@@ -1,12 +1,15 @@
 package hidapi
 
 import (
+	"fmt"
+
 	"github.com/neuroplastio/neio-agent/pkg/bits"
 	"go.uber.org/zap"
 )
 
 type EventSource struct {
 	log         *zap.Logger
+	decoder     *ReportDecoder
 	dataItems   DataItemSet
 	usageSets   map[uint8]map[int]UsageSet
 	usageValues map[uint8]map[int]UsageValues
@@ -17,6 +20,7 @@ type EventSource struct {
 func NewEventSource(log *zap.Logger, dataItems DataItemSet) *EventSource {
 	rte := &EventSource{
 		log:         log,
+		decoder:     NewReportDecoder(dataItems),
 		dataItems:   dataItems,
 		usageSets:   make(map[uint8]map[int]UsageSet),
 		usageValues: make(map[uint8]map[int]UsageValues),
@@ -33,8 +37,6 @@ func (r *EventSource) initializeStates() {
 			Fields: make([]bits.Bits, len(rd.DataItems)),
 		}
 		for i, item := range rd.DataItems {
-			// TODO: support empty dynamic arrays
-			// TODO: support correct const values (when handling first report)
 			report.Fields[i] = bits.NewZeros(int(item.ReportCount * item.ReportSize))
 		}
 		r.reports[rd.ID] = report
@@ -43,13 +45,33 @@ func (r *EventSource) initializeStates() {
 	}
 }
 
-func (r *EventSource) OnReport(report Report) *Event {
-	lastReport := r.reports[report.ID]
+func (r *EventSource) InitReports(reportGetter func(reportID uint8) ([]byte, error)) error {
+	for _, rd := range r.dataItems.Reports() {
+		reportData, err := reportGetter(rd.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get report %d: %w", rd.ID, err)
+		}
+		report, ok := r.decoder.Decode(reportData)
+		if !ok {
+			return fmt.Errorf("failed to decode report %d", rd.ID)
+		}
+		r.reports[rd.ID] = report
+	}
+	return nil
+}
+
+func (r *EventSource) OnReport(reportData []byte) *Event {
+	report, ok := r.decoder.Decode(reportData)
+	if !ok {
+		r.log.Error("failed to decode report")
+		return nil
+	}
 	dataItems := r.dataItems.Report(report.ID)
 	if len(report.Fields) != len(dataItems) {
 		r.log.Error("report field count mismatch")
 		return NewEvent()
 	}
+	lastReport := r.reports[report.ID]
 
 	event := NewEvent()
 	for i, item := range dataItems {

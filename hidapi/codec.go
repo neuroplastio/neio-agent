@@ -29,7 +29,7 @@ func (r *ReportDecoder) Decode(data []byte) (Report, bool) {
 		if bits.Len() == 0 {
 			return Report{}, false
 		}
-		report.Fields[i] = bits
+		report.Fields[i] = bits.Clone()
 	}
 	return report, true
 }

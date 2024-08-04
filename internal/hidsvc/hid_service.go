@@ -25,17 +25,11 @@ type Service struct {
 	ready      chan struct{}
 	backendBus *BackendBus
 
-	inputBus            *InputBus
-	checkInputListeners chan Address
-	inputListeners      *xsync.MapOf[Address, int]
-	openedInputs        map[Address]*openedInputDevice
-	connectedInputs     *xsync.MapOf[Address, struct{}]
+	inputBus        *InputBus
+	connectedInputs *xsync.MapOf[Address, struct{}]
 
-	outputBus            *OutputBus
-	checkOutputListeners chan Address
-	outputListeners      *xsync.MapOf[Address, int]
-	openedOutputs        map[Address]*openedOutputDevice
-	connectedOutputs     *xsync.MapOf[Address, []byte]
+	outputBus        *OutputBus
+	connectedOutputs *xsync.MapOf[Address, []byte]
 }
 
 type (
@@ -50,9 +44,7 @@ type (
 	InputBus         = bus.Bus[InputBusKey, InputDeviceEvent]
 	InputPublisher   = bus.Publisher[InputDeviceEvent]
 	InputSubscriber  = bus.Subscriber[InputBusKey, InputDeviceEvent]
-	InputDeviceEvent struct {
-		Report []byte
-	}
+	InputDeviceEvent struct{}
 
 	OutputEventType uint8
 	OutputBusKey    struct {
@@ -62,27 +54,17 @@ type (
 	OutputBus         = bus.Bus[OutputBusKey, OutputDeviceEvent]
 	OutputPublisher   = bus.Publisher[OutputDeviceEvent]
 	OutputSubscriber  = bus.Subscriber[OutputBusKey, OutputDeviceEvent]
-	OutputDeviceEvent struct {
-		Report []byte
-	}
+	OutputDeviceEvent struct{}
 )
 
 const (
 	InputConnected InputEventType = iota
 	InputDisconnected
-	InputOpened
-	InputClosed
-	InputReportRead
-	InputReportWrite
 )
 
 const (
 	OutputConnected OutputEventType = iota
 	OutputDisconnected
-	OutputOpened
-	OutputClosed
-	OutputReportRead
-	OutputReportWrite
 )
 
 var defaultOptions = serviceOptions{
@@ -122,17 +104,11 @@ func New(db *badger.DB, log *zap.Logger, now func() time.Time, opts ...Option) *
 		ready:      make(chan struct{}),
 		backendBus: bus.NewBus[string, BackendEvent](log),
 
-		inputBus:            bus.NewBus[InputBusKey, InputDeviceEvent](log),
-		checkInputListeners: make(chan Address),
-		inputListeners:      xsync.NewMapOf[Address, int](),
-		openedInputs:        make(map[Address]*openedInputDevice),
-		connectedInputs:     xsync.NewMapOf[Address, struct{}](),
+		inputBus:        bus.NewBus[InputBusKey, InputDeviceEvent](log),
+		connectedInputs: xsync.NewMapOf[Address, struct{}](),
 
-		outputBus:            bus.NewBus[OutputBusKey, OutputDeviceEvent](log),
-		checkOutputListeners: make(chan Address),
-		outputListeners:      xsync.NewMapOf[Address, int](),
-		openedOutputs:        make(map[Address]*openedOutputDevice),
-		connectedOutputs:     xsync.NewMapOf[Address, []byte](),
+		outputBus:        bus.NewBus[OutputBusKey, OutputDeviceEvent](log),
+		connectedOutputs: xsync.NewMapOf[Address, []byte](),
 	}
 }
 
@@ -199,263 +175,10 @@ func (s *Service) consumeEvents(ctx context.Context) {
 			}
 		}
 	}()
-	go func() {
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		ch := s.inputBus.SubscribeEvents(ctx)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event := <-ch:
-				s.manageInputListeners(event)
-			}
-		}
-	}()
-	go func() {
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		ch := s.outputBus.SubscribeEvents(ctx)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event := <-ch:
-				s.manageOutputListeners(event)
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case addr := <-s.checkInputListeners:
-				listeners, _ := s.inputListeners.Load(addr)
-				if s.IsInputConnected(addr) {
-					switch {
-					case listeners == 0 && s.openedInputs[addr] != nil:
-						s.openedInputs[addr].Close()
-						delete(s.openedInputs, addr)
-						s.log.Debug("Input closed", zap.String("addr", addr.String()))
-					case listeners > 0 && s.openedInputs[addr] == nil:
-						dev, err := s.openInputDevice(ctx, addr)
-						if err != nil {
-							s.log.Error("failed to open device", zap.Error(err))
-							continue
-						}
-						s.openedInputs[addr] = dev
-						s.log.Debug("Input opened", zap.String("addr", addr.String()))
-					}
-				} else {
-					if s.openedInputs[addr] != nil {
-						s.openedInputs[addr].Close()
-						delete(s.openedInputs, addr)
-						s.log.Debug("Input closed", zap.String("addr", addr.String()))
-					}
-				}
-			case addr := <-s.checkOutputListeners:
-				s.log.Debug("Checking output listeners", zap.String("addr", addr.String()))
-				listeners, _ := s.outputListeners.Load(addr)
-				if s.IsOutputConnected(addr) {
-					switch {
-					case listeners == 0 && s.openedOutputs[addr] != nil:
-						s.openedOutputs[addr].Close()
-						delete(s.openedOutputs, addr)
-						s.log.Debug("Output closed", zap.String("addr", addr.String()))
-					case listeners > 0 && s.openedOutputs[addr] == nil:
-						desc, _ := s.connectedOutputs.Load(addr)
-						if desc == nil {
-							s.log.Error("output descriptor not found", zap.String("addr", addr.String()))
-							continue
-						}
-						dev, err := s.openOutputDevice(ctx, addr, desc)
-						if err != nil {
-							s.log.Error("failed to open output device", zap.Error(err))
-							continue
-						}
-						s.openedOutputs[addr] = dev
-						s.log.Debug("output opened", zap.String("addr", addr.String()))
-					}
-				} else {
-					if s.openedOutputs[addr] != nil {
-						s.openedOutputs[addr].Close()
-						delete(s.openedOutputs, addr)
-						s.log.Debug("Output closed", zap.String("addr", addr.String()))
-					}
-				}
-			}
-		}
-	}()
 }
 
 func (s *Service) Ready() <-chan struct{} {
 	return s.ready
-}
-
-type openedInputDevice struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	addr   Address
-	handle BackendInputDeviceHandle
-}
-
-func (o *openedInputDevice) Close() {
-	o.cancel()
-}
-
-type openedOutputDevice struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	addr   Address
-	handle BackendOutputDeviceHandle
-}
-
-func (o *openedOutputDevice) Close() {
-	o.cancel()
-}
-
-func (s *Service) openOutputDevice(ctx context.Context, addr Address, desc []byte) (*openedOutputDevice, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	handle, err := s.options.backends[addr.Backend].OpenOutput(addr.ID, desc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open device: %w", err)
-	}
-	dev := &openedOutputDevice{
-		ctx:    ctx,
-		cancel: cancel,
-		addr:   addr,
-		handle: handle,
-	}
-	sub := s.outputBus.Subscribe(ctx, OutputBusKey{
-		Type: OutputReportWrite,
-		Addr: addr,
-	})
-	go func() {
-		defer handle.Close()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-sub:
-				_, err := handle.Write(msg.Message.Report)
-				if err != nil {
-					s.log.Error("failed to write to output device", zap.Error(err))
-				}
-			}
-		}
-	}()
-	go func() {
-		buf := make([]byte, 4096) // TODO: calculate from the descriptor
-		for {
-			n, err := handle.Read(buf)
-			if err != nil {
-				s.log.Error("failed to read from output device", zap.Error(err))
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if n > 0 {
-				b := make([]byte, n)
-				copy(b, buf[:n])
-				s.outputBus.Publish(ctx, OutputBusKey{
-					Type: OutputReportRead,
-					Addr: addr,
-				}, OutputDeviceEvent{Report: b})
-			}
-		}
-	}()
-	return dev, nil
-}
-
-func (s *Service) openInputDevice(ctx context.Context, addr Address) (*openedInputDevice, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	handle, err := s.options.backends[addr.Backend].OpenInput(addr.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open device: %w", err)
-	}
-	sub := s.inputBus.Subscribe(ctx, InputBusKey{
-		Type: InputReportWrite,
-		Addr: addr,
-	})
-	dev := &openedInputDevice{
-		ctx:    ctx,
-		cancel: cancel,
-		addr:   addr,
-		handle: handle,
-	}
-	go func() {
-		defer handle.Close()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-sub:
-				_, err := handle.Write(msg.Message.Report)
-				if err != nil {
-					s.log.Error("failed to write to device", zap.Error(err))
-				}
-			}
-		}
-	}()
-	go func() {
-		buf := make([]byte, 4096) // TODO: calculate from the descriptor
-		for {
-			// TODO: read blocks even after the device is closed. This leaks a goroutine.
-			// Use epoll?
-			n, err := handle.Read(buf)
-			if err != nil {
-				s.log.Error("failed to read from device", zap.Error(err))
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if n > 0 {
-				b := make([]byte, n)
-				copy(b, buf[:n])
-				s.inputBus.Publish(ctx, InputBusKey{
-					Type: InputReportRead,
-					Addr: addr,
-				}, InputDeviceEvent{Report: b})
-			}
-		}
-	}()
-	return dev, nil
-}
-
-func (s *Service) manageInputListeners(event bus.Message[InputBusKey, bus.EventType]) {
-	if event.Key.Type != InputReportRead {
-		return
-	}
-	switch event.Message {
-	case bus.EventTypeSubscribed:
-		s.inputListeners.Compute(event.Key.Addr, func(listeners int, _ bool) (int, bool) {
-			return listeners + 1, false
-		})
-	case bus.EventTypeUnsubscribed:
-		s.inputListeners.Compute(event.Key.Addr, func(listeners int, _ bool) (int, bool) {
-			return listeners - 1, false
-		})
-	}
-	s.checkInputListeners <- event.Key.Addr
-}
-
-func (s *Service) manageOutputListeners(event bus.Message[OutputBusKey, bus.EventType]) {
-	if event.Key.Type != OutputReportRead {
-		return
-	}
-	switch event.Message {
-	case bus.EventTypeSubscribed:
-		s.outputListeners.Compute(event.Key.Addr, func(listeners int, _ bool) (int, bool) {
-			return listeners + 1, false
-		})
-	case bus.EventTypeUnsubscribed:
-		s.outputListeners.Compute(event.Key.Addr, func(listeners int, _ bool) (int, bool) {
-			return listeners - 1, false
-		})
-	}
-	s.checkOutputListeners <- event.Key.Addr
 }
 
 func (s *Service) handleBackendEvent(ctx context.Context, backendID string, event BackendEvent) error {
@@ -465,25 +188,25 @@ func (s *Service) handleBackendEvent(ctx context.Context, backendID string, even
 		s.onBackendInputsChanged(ctx, backendID, event.InputsChanged)
 	case event.OutputsChanged != nil:
 		s.log.Debug("outputs changed", zap.String("backend", backendID))
-		s.onBackendOutputsChanged(backendID, event.OutputsChanged)
+		s.onBackendOutputsChanged(ctx, backendID, event.OutputsChanged)
 	}
 	return nil
 }
 
 type HidInputDevice struct {
-	Address       Address            `json:"address"`
-	BackendDevice BackendInputDevice `json:"backendDevice"`
-	Name          string             `json:"name"`
-	FirstSeenAt   time.Time          `json:"firstSeenAt"`
-	LastSeenAt    time.Time          `json:"lastSeenAt"`
+	Address       Address       `json:"address"`
+	BackendDevice BackendDevice `json:"backendDevice"`
+	Name          string        `json:"name"`
+	FirstSeenAt   time.Time     `json:"firstSeenAt"`
+	LastSeenAt    time.Time     `json:"lastSeenAt"`
 }
 
 type HidOutputDevice struct {
-	Address       Address             `json:"address"`
-	BackendDevice BackendOutputDevice `json:"backendDevice"`
-	Name          string              `json:"name"`
-	FirstSeenAt   time.Time           `json:"firstSeenAt"`
-	LastSeenAt    time.Time           `json:"lastSeenAt"`
+	Address       Address       `json:"address"`
+	BackendDevice BackendDevice `json:"backendDevice"`
+	Name          string        `json:"name"`
+	FirstSeenAt   time.Time     `json:"firstSeenAt"`
+	LastSeenAt    time.Time     `json:"lastSeenAt"`
 }
 
 func (s *Service) onBackendInputsChanged(ctx context.Context, backendID string, event *BackendEventInputsChanged) {
@@ -503,10 +226,9 @@ func (s *Service) onInputDisconnected(ctx context.Context, backendID, id string)
 		Type: InputDisconnected,
 		Addr: addr,
 	}, InputDeviceEvent{})
-	s.checkInputListeners <- addr
 }
 
-func (s *Service) onInputConnected(ctx context.Context, backendID string, bdev BackendInputDevice) {
+func (s *Service) onInputConnected(ctx context.Context, backendID string, bdev BackendDevice) {
 	dev, err := s.initializeInputDevice(backendID, bdev)
 	if err != nil {
 		s.log.Error("failed to initialize device", zap.Error(err))
@@ -518,24 +240,28 @@ func (s *Service) onInputConnected(ctx context.Context, backendID string, bdev B
 		Type: InputConnected,
 		Addr: dev.Address,
 	}, InputDeviceEvent{})
-	s.checkInputListeners <- dev.Address
 }
 
-func (s *Service) onBackendOutputsChanged(backendID string, event *BackendEventOutputsChanged) {
+func (s *Service) onBackendOutputsChanged(ctx context.Context, backendID string, event *BackendEventOutputsChanged) {
 	for _, id := range event.Disconnected {
-		s.onOutputDisconnected(backendID, id)
+		s.onOutputDisconnected(ctx, backendID, id)
 	}
 	for _, dev := range event.Connected {
-		s.onOutputConnected(backendID, dev)
+		s.onOutputConnected(ctx, backendID, dev)
 	}
 }
 
-func (s *Service) onOutputDisconnected(backendID, id string) {
-	s.connectedOutputs.Delete(Address{Backend: backendID, ID: id})
+func (s *Service) onOutputDisconnected(ctx context.Context, backendID, id string) {
+	addr := Address{Backend: backendID, ID: id}
+	s.connectedOutputs.Delete(addr)
 	s.log.Debug("output disconnected", zap.String("backend", backendID), zap.String("id", id))
+	s.outputBus.Publish(ctx, OutputBusKey{
+		Type: OutputDisconnected,
+		Addr: addr,
+	}, OutputDeviceEvent{})
 }
 
-func (s *Service) onOutputConnected(backendID string, bdev BackendOutputDevice) {
+func (s *Service) onOutputConnected(ctx context.Context, backendID string, bdev BackendDevice) {
 	dev, err := s.initializeOutputDevice(backendID, bdev)
 	if err != nil {
 		s.log.Error("failed to initialize device", zap.Error(err))
@@ -543,6 +269,10 @@ func (s *Service) onOutputConnected(backendID string, bdev BackendOutputDevice) 
 	}
 	s.log.Debug("output connected", zap.String("backend", backendID), zap.String("id", dev.Address.ID), zap.String("name", dev.Name), zap.Time("firstSeenAt", dev.FirstSeenAt))
 	s.connectedOutputs.Store(dev.Address, nil)
+	s.outputBus.Publish(ctx, OutputBusKey{
+		Type: OutputConnected,
+		Addr: dev.Address,
+	}, OutputDeviceEvent{})
 }
 
 var ErrDeviceNotFound = errors.New("device not found")
@@ -555,12 +285,11 @@ func (s *Service) outputDeviceKey(address Address) []byte {
 	return []byte(fmt.Sprintf("hid/outputs/%s/%s", address.Backend, address.ID))
 }
 
-// TODO: storage model separation
-func (s *Service) initializeInputDevice(backendID string, bdev BackendInputDevice) (HidInputDevice, error) {
+func (s *Service) initializeInputDevice(backendID string, bdev BackendDevice) (HidInputDevice, error) {
 	var dev HidInputDevice
 	now := s.now()
 	err := s.db.Update(func(txn *badger.Txn) error {
-		addr := Address{Backend: backendID, ID: bdev.Address}
+		addr := Address{Backend: backendID, ID: bdev.ID}
 		key := s.inputDeviceKey(addr)
 		item, err := txn.Get(key)
 		switch {
@@ -596,11 +325,11 @@ func (s *Service) initializeInputDevice(backendID string, bdev BackendInputDevic
 	return dev, nil
 }
 
-func (s *Service) initializeOutputDevice(backendID string, bdev BackendOutputDevice) (HidOutputDevice, error) {
+func (s *Service) initializeOutputDevice(backendID string, bdev BackendDevice) (HidOutputDevice, error) {
 	var dev HidOutputDevice
 	now := s.now()
 	err := s.db.Update(func(txn *badger.Txn) error {
-		addr := Address{Backend: backendID, ID: bdev.Address}
+		addr := Address{Backend: backendID, ID: bdev.ID}
 		key := s.outputDeviceKey(addr)
 		item, err := txn.Get(key)
 		switch {
@@ -662,45 +391,25 @@ type BackendEvent struct {
 }
 
 type BackendEventInputsChanged struct {
-	Connected    []BackendInputDevice
+	Connected    []BackendDevice
 	Disconnected []string
 }
 
 type BackendEventOutputsChanged struct {
-	Connected    []BackendOutputDevice
+	Connected    []BackendDevice
 	Disconnected []string
 }
 
-type BackendInputDevice struct {
-	Address          string `json:"address"`
-	Name             string `json:"name"`
-	ReportDescriptor []byte `json:"reportDescriptor"`
-}
-
-type HIDReportDescriptor struct {
-	Hash uint64
-	Data []byte
-}
-
-type BackendOutputDevice struct {
-	Address string `json:"address"`
-	Name    string `json:"name"`
+type BackendDevice struct {
+	ID   string
+	Name string
 }
 
 type Backend interface {
 	Start(ctx context.Context, pub BackendPublisher) error
 	Ready() <-chan struct{}
-	OpenInput(id string) (BackendInputDeviceHandle, error)
-	OpenOutput(id string, desc []byte) (BackendOutputDeviceHandle, error)
-}
-
-type BackendInputDeviceHandle interface {
-	io.ReadWriteCloser
-	GetInputReport() ([]byte, error)
-}
-
-type BackendOutputDeviceHandle interface {
-	io.ReadWriteCloser
+	OpenInputDevice(id string) (InputDevice, error)
+	OpenOutputDevice(id string, descriptor []byte) (OutputDevice, error)
 }
 
 type Address struct {
@@ -826,107 +535,6 @@ func (s *Service) GetInputDevice(addr Address) (HidInputDevice, error) {
 	return dev, nil
 }
 
-func (s *Service) GetInputDeviceHandle(addr Address, alias string) (*InputDeviceHandle, error) {
-	dev, err := s.GetInputDevice(addr)
-	if err != nil {
-		return nil, err
-	}
-	return &InputDeviceHandle{
-		alias: alias,
-		dev:   dev,
-		subscriber: s.inputBus.CreateSubscriber(InputBusKey{
-			Type: InputReportRead,
-			Addr: addr,
-		}),
-		publisher: s.inputBus.CreatePublisher(InputBusKey{
-			Type: InputReportWrite,
-			Addr: addr,
-		}),
-	}, nil
-}
-
-type InputDeviceHandle struct {
-	alias      string
-	dev        HidInputDevice
-	subscriber InputSubscriber
-	publisher  InputPublisher
-}
-
-func (h *InputDeviceHandle) Start(ctx context.Context, read chan<- []byte, write <-chan []byte) error {
-	ch := h.subscriber(ctx)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-ch:
-				read <- msg.Message.Report
-			case report := <-write:
-				h.publisher(ctx, InputDeviceEvent{Report: report})
-			}
-		}
-	}()
-	<-ctx.Done()
-	return nil
-}
-
-func (h *InputDeviceHandle) InputDevice() HidInputDevice {
-	return h.dev
-}
-
-type OutputDeviceHandle struct {
-	alias         string
-	dev           HidOutputDevice
-	subscriber    OutputSubscriber
-	publisher     OutputPublisher
-	setDescriptor func(desc []byte)
-}
-
-func (s *Service) GetOutputDeviceHandle(addr Address, alias string) (*OutputDeviceHandle, error) {
-	dev, err := s.GetOutputDevice(addr)
-	if err != nil {
-		return nil, err
-	}
-	return &OutputDeviceHandle{
-		alias: alias,
-		dev:   dev,
-		subscriber: s.outputBus.CreateSubscriber(OutputBusKey{
-			Type: OutputReportRead,
-			Addr: addr,
-		}),
-		publisher: s.outputBus.CreatePublisher(OutputBusKey{
-			Type: OutputReportWrite,
-			Addr: addr,
-		}),
-		setDescriptor: func(desc []byte) {
-			s.connectedOutputs.Store(addr, desc)
-		},
-	}, nil
-}
-
-func (h *OutputDeviceHandle) OutputDevice() HidOutputDevice {
-	return h.dev
-}
-
-func (h *OutputDeviceHandle) Start(ctx context.Context, desc []byte, read chan<- []byte, write <-chan []byte) error {
-	h.setDescriptor(desc)
-	ch := h.subscriber(ctx)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-ch:
-				read <- msg.Message.Report
-			case report := <-write:
-				h.publisher(ctx, OutputDeviceEvent{Report: report})
-			}
-		}
-	}()
-	<-ctx.Done()
-	return nil
-}
-
 func (s *Service) GetOutputDevice(addr Address) (HidOutputDevice, error) {
 	var dev HidOutputDevice
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -941,6 +549,30 @@ func (s *Service) GetOutputDevice(addr Address) (HidOutputDevice, error) {
 	})
 	if err != nil {
 		return HidOutputDevice{}, fmt.Errorf("failed to get device: %w", err)
+	}
+	return dev, nil
+}
+
+var ErrDeviceNotConnected = errors.New("device not connected")
+
+func (s *Service) OpenInputDevice(addr Address) (InputDevice, error) {
+	if !s.IsInputConnected(addr) {
+		return nil, ErrDeviceNotConnected
+	}
+	dev, err := s.options.backends[addr.Backend].OpenInputDevice(addr.ID)
+	if err != nil {
+		return nil, fmt.Errorf("error opening input device: %w", err)
+	}
+	return dev, nil
+}
+
+func (s *Service) OpenOutputDevice(addr Address, descriptor []byte) (OutputDevice, error) {
+	if !s.IsOutputConnected(addr) {
+		return nil, ErrDeviceNotConnected
+	}
+	dev, err := s.options.backends[addr.Backend].OpenOutputDevice(addr.ID, descriptor)
+	if err != nil {
+		return nil, fmt.Errorf("error opening output device: %w", err)
 	}
 	return dev, nil
 }
@@ -968,4 +600,16 @@ func (s *Service) RegisterNodes(reg flowapi.Registry) {
 		log: s.log.Named("output"),
 		hid: s,
 	})
+}
+
+type InputDevice interface {
+	io.ReadWriteCloser
+	Acquire() (func(), error)
+	GetReportDescriptor() ([]byte, error)
+	GetInputReport(reportID uint8) ([]byte, error)
+}
+
+type OutputDevice interface {
+	io.ReadWriteCloser
+	GetOutputReport(reportID uint8) ([]byte, error)
 }

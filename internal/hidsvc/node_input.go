@@ -37,13 +37,12 @@ type inputConfig struct {
 }
 
 type InputNode struct {
-	log     *zap.Logger
-	id      string
-	hid     *Service
-	dev     *InputDeviceHandle
-	decoder *hidapi.ReportDecoder
-	source  *hidapi.EventSource
-	sink    *hidapi.EventSink
+	log *zap.Logger
+	id  string
+	hid *Service
+
+	addr Address
+	done chan struct{}
 }
 
 func (g *InputNode) Configure(c flowapi.NodeConfigurator) error {
@@ -51,77 +50,120 @@ func (g *InputNode) Configure(c flowapi.NodeConfigurator) error {
 	if err := c.Unmarshal(&cfg); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	dev, err := g.hid.GetInputDeviceHandle(cfg.Addr, g.id)
-	if err != nil {
-		return fmt.Errorf("failed to get input device %s: %w", cfg.Addr, err)
-	}
-
-	desc, err := hiddesc.Decode(dev.InputDevice().BackendDevice.ReportDescriptor)
-	if err != nil {
-		return fmt.Errorf("failed to decode HID report descriptor: %w", err)
-	}
-	g.dev = dev
-	itemSet := hidapi.NewDataItemSet(desc)
-	g.decoder = hidapi.NewReportDecoder(itemSet.WithType(hiddesc.MainItemTypeInput))
-	g.source = hidapi.NewEventSource(g.log.Named("source"), itemSet.WithType(hiddesc.MainItemTypeInput))
-	g.sink = hidapi.NewEventSink(g.log.Named("sink"), itemSet.WithType(hiddesc.MainItemTypeOutput))
+	g.addr = cfg.Addr
 	return nil
 }
 
-func (g *InputNode) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) error {
-	read := make(chan []byte)
-	write := make(chan []byte)
-	sub := down.Subscribe(ctx)
-	// TODO: query GetInputReport for each reportID and send through the pipeline
-	//   (and simplify how we open and close the device)
-	go func() {
-		<-ctx.Done()
-		release()
-		g.log.Info("Input device released", zap.String("addr", g.addr.String()))
+func (g *InputNode) handleDevice(ctx context.Context, down flowapi.Stream) {
+	defer close(g.done)
+	dev, err := g.hid.OpenInputDevice(g.addr)
+	if err != nil {
+		g.log.Error("Failed to open input device", zap.Error(err))
+		return
+	}
+	descRaw, err := dev.GetReportDescriptor()
+	if err != nil {
 		dev.Close()
-		g.log.Info("Input device closed", zap.String("addr", g.addr.String()))
-	}()
+		g.log.Error("Failed to get report descriptor", zap.Error(err))
+		return
+	}
+	desc, err := hiddesc.Decode(descRaw)
+	if err != nil {
+		dev.Close()
+		g.log.Error("Failed to decode HID report descriptor", zap.Error(err))
+		return
+	}
+	itemSet := hidapi.NewDataItemSet(desc)
+	source := hidapi.NewEventSource(g.log.Named("source"), itemSet.WithType(hiddesc.MainItemTypeInput))
+	err = source.InitReports(dev.GetInputReport)
+	if err != nil {
+		dev.Close()
+		g.log.Error("Failed to initialize input reports", zap.Error(err))
+		return
+	}
 
-	buf := make([]byte, 2048) // TODO: calculate from the descriptor (only for standard input devices)
-	for {
-		n, err := dev.Read(buf)
-		if err != nil {
-			g.log.Error("Failed to read from device, releasing", zap.Error(err))
-			return
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if n > 0 {
-			event := source.OnReport(buf[:n])
-			if !event.IsEmpty() {
-				g.log.Debug("event", zap.String("event", event.String()))
-				down.Broadcast(flowapi.Event{
-					HID: event,
-				})
-			}
-		}
-	}()
+	release, err := dev.Acquire()
+	if err != nil {
+		dev.Close()
+		g.log.Error("Failed to acquire input device", zap.Error(err))
+		return
+	}
+	g.log.Info("Input device acquired", zap.String("addr", g.addr.String()))
+
 	go func() {
-		defer close(read)
+		buf := make([]byte, 2048) // TODO: calculate from the descriptor (only for standard input devices)
 		for {
-			select {
-			case data := <-read:
-				report, ok := g.decoder.Decode(data)
-				if !ok {
-					g.log.Error("Failed to parse report")
-					continue
-				}
-				event := g.source.OnReport(report)
+			n, err := dev.Read(buf)
+			if err != nil {
+				g.log.Error("Failed to read from device, releasing", zap.Error(err))
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			if n > 0 {
+				event := source.OnReport(buf[:n])
 				if !event.IsEmpty() {
+					g.log.Debug("event", zap.String("event", event.String()))
 					down.Broadcast(flowapi.Event{
 						HID: event,
 					})
 				}
-			case <-ctx.Done():
-				return
 			}
 		}
 	}()
-	return g.dev.Start(ctx, read, write)
+	<-ctx.Done()
+	release()
+	g.log.Info("Input device released", zap.String("addr", g.addr.String()))
+	dev.Close()
+	g.log.Info("Input device closed", zap.String("addr", g.addr.String()))
+}
+
+func (g *InputNode) Run(ctx context.Context, _ flowapi.Stream, down flowapi.Stream) error {
+	deviceEvents := g.hid.inputBus.Subscribe(ctx, InputBusKey{
+		Type: InputConnected,
+		Addr: g.addr,
+	}, InputBusKey{
+		Type: InputDisconnected,
+		Addr: g.addr,
+	})
+	var deviceCtx context.Context
+	var cancel context.CancelFunc
+	isConnected := g.hid.IsInputConnected(g.addr)
+	if isConnected {
+		deviceCtx, cancel = context.WithCancel(ctx)
+		g.done = make(chan struct{})
+		go g.handleDevice(deviceCtx, down)
+	}
+	for {
+		select {
+		case ev := <-deviceEvents:
+			switch ev.Key.Type {
+			case InputConnected:
+				if cancel != nil {
+					break
+				}
+				g.log.Info("Input device connected", zap.String("addr", g.addr.String()))
+				deviceCtx, cancel = context.WithCancel(ctx)
+				g.done = make(chan struct{})
+				go g.handleDevice(deviceCtx, down)
+			case InputDisconnected:
+				if cancel == nil {
+					break
+				}
+				g.log.Info("Input device disconnected", zap.String("addr", g.addr.String()))
+				cancel()
+				<-g.done
+				deviceCtx = nil
+				cancel = nil
+				g.done = nil
+			}
+		case <-ctx.Done():
+			if cancel != nil {
+				cancel()
+				<-g.done
+			}
+			return nil
+		}
+	}
 }
