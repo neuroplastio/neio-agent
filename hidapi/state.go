@@ -257,7 +257,6 @@ func (r *ReportState) ApplyEvent(e *Event) [][]byte {
 		}
 		return reports[reportMap[reportID]]
 	}
-	r.log.Debug("Event", zap.String("event", e.String()))
 	for _, usageEvent := range e.Usages() {
 		usage := usageEvent.Usage
 		var (

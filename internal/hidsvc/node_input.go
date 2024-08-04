@@ -128,7 +128,6 @@ func (g *InputNode) handleDevice(ctx context.Context, down flowapi.Stream) {
 			if n > 0 {
 				event := inputState.ApplyReport(buf[:n])
 				if !event.IsEmpty() {
-					g.log.Debug("event", zap.String("event", event.String()))
 					down.Broadcast(flowapi.Event{
 						Type: flowapi.HIDEventTypeInput,
 						HID:  event,
