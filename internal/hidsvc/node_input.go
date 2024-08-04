@@ -75,16 +75,30 @@ func (g *InputNode) Run(ctx context.Context, up flowapi.Stream, down flowapi.Str
 	// TODO: query GetInputReport for each reportID and send through the pipeline
 	//   (and simplify how we open and close the device)
 	go func() {
-		defer close(write)
-		for {
-			select {
-			case event := <-sub:
-				reports := g.sink.OnEvent(event.HID)
-				for _, report := range reports {
-					write <- hidapi.EncodeReport(report).Bytes()
-				}
-			case <-ctx.Done():
-				return
+		<-ctx.Done()
+		release()
+		g.log.Info("Input device released", zap.String("addr", g.addr.String()))
+		dev.Close()
+		g.log.Info("Input device closed", zap.String("addr", g.addr.String()))
+	}()
+
+	buf := make([]byte, 2048) // TODO: calculate from the descriptor (only for standard input devices)
+	for {
+		n, err := dev.Read(buf)
+		if err != nil {
+			g.log.Error("Failed to read from device, releasing", zap.Error(err))
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if n > 0 {
+			event := source.OnReport(buf[:n])
+			if !event.IsEmpty() {
+				g.log.Debug("event", zap.String("event", event.String()))
+				down.Broadcast(flowapi.Event{
+					HID: event,
+				})
 			}
 		}
 	}()
