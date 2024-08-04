@@ -103,6 +103,10 @@ func NewGetReportDescriptor(agent agentProvider) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			go agent().Config().Start(cmd.Context())
+			go agent().HID().Start(cmd.Context())
+			<-agent().Config().Ready()
+			<-agent().HID().Ready()
 			dev, err := agent().HID().OpenInputDevice(addr)
 			if err != nil {
 				return err

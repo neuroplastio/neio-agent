@@ -1,7 +1,9 @@
 package linux
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -350,6 +352,23 @@ func (h *hidapiDevice) GetInputReport(reportID uint8) ([]byte, error) {
 	return buf[:n], nil
 }
 
+func (h *hidapiDevice) GetFeatureReport(reportID uint8) ([]byte, error) {
+	buf := make([]byte, 4096) // TODO: configurable size
+	buf[0] = reportID
+	n, err := h.dev.GetFeatureReport(buf)
+	if err != nil {
+		return nil, err
+	}
+	if reportID == 0 {
+		return buf[1:n], nil
+	}
+	return buf[:n], nil
+}
+
+func (h *hidapiDevice) SetFeatureReport(buf []byte) (int, error) {
+	return h.dev.SendFeatureReport(buf)
+}
+
 func (h *hidapiDevice) Close() error {
 	return h.dev.Close()
 }
@@ -367,7 +386,7 @@ func (h *hidapiDevice) GetReportDescriptor() ([]byte, error) {
 	return buf[:n], nil
 }
 
-func (b *Backend) OpenOutputDevice(id string, descriptor []byte) (hidsvc.OutputDevice, error) {
+func (b *Backend) OpenOutputDevice(id string, handler hidsvc.OutputDeviceHandler, descriptor []byte) (hidsvc.OutputDevice, error) {
 	if !strings.HasPrefix(id, "uhid:") {
 		return nil, fmt.Errorf("invalid output device address: %s", id)
 	}
@@ -376,6 +395,7 @@ func (b *Backend) OpenOutputDevice(id string, descriptor []byte) (hidsvc.OutputD
 	if !ok {
 		return nil, fmt.Errorf("device not found: %s", id)
 	}
+	b.log.Debug("Uhid desc size", zap.Any("desc", len(descriptor)))
 	uhidDev, err := uhid.NewDevice(id, descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create uhid device: %w", err)
@@ -392,23 +412,166 @@ func (b *Backend) OpenOutputDevice(id string, descriptor []byte) (hidsvc.OutputD
 		return nil, fmt.Errorf("failed to open uhid device: %w", err)
 	}
 
-	return &uhidDevice{
-		b:      b,
-		log:    b.log,
-		ctx:    ctx,
-		cancel: cancel,
-		dev:    uhidDev,
-		events: events,
-	}, nil
+	dev := &uhidDevice{
+		handler: handler,
+		b:       b,
+		log:     b.log,
+		ctx:     ctx,
+		cancel:  cancel,
+		dev:     uhidDev,
+		events:  events,
+		readCh:  make(chan []byte, 8),
+	}
+	go dev.run()
+	return dev, nil
 }
 
 type uhidDevice struct {
-	b      *Backend
-	log    *zap.Logger
-	ctx    context.Context
-	cancel context.CancelFunc
-	dev    *uhid.Device
-	events chan uhid.Event
+	b       *Backend
+	log     *zap.Logger
+	ctx     context.Context
+	cancel  context.CancelFunc
+	dev     *uhid.Device
+	events  chan uhid.Event
+	handler hidsvc.OutputDeviceHandler
+
+	readCh chan []byte
+}
+
+type UhidReportType uint8
+
+const (
+	UhidReportTypeFeature UhidReportType = 0
+	UhidReportTypeOutput  UhidReportType = 1
+	UhidReportTypeInput   UhidReportType = 2
+)
+
+type GetReportRequest struct {
+	RequestID  uint32
+	ReportID   uint8
+	ReportType UhidReportType
+}
+
+const uhidReportSize = 4096
+
+type GetReportReply struct {
+	EventType uhid.EventType
+	RequestID uint32
+	Error     uint16
+	Size      uint16
+	Data      [uhidReportSize]byte
+}
+
+type SetReportRequest struct {
+	RequestID  uint32
+	ReportID   uint8
+	ReportType UhidReportType
+	Size       uint16
+	Data       [uhidReportSize]byte
+}
+
+type SetReportReply struct {
+	EventType uhid.EventType
+	RequestID uint32
+	Error     uint16
+}
+
+func (h *uhidDevice) run() {
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case event := <-h.events:
+			switch event.Type {
+			case uhid.Output:
+				data := make([]byte, len(event.Data))
+				copy(data, event.Data)
+				select {
+				case h.readCh <- data:
+				default:
+					h.log.Warn("Dropped uhid output event")
+				}
+			case uhid.GetReport:
+				reader := bytes.NewReader(event.Data) // We just want to read the first uint32 for now
+				getReport := GetReportRequest{}
+				err := binary.Read(reader, binary.LittleEndian, &getReport)
+				if err != nil {
+					h.log.Error("failed to read GetReport request", zap.Error(err))
+					continue
+				}
+				h.log.Debug("GetReport request", zap.Any("request", getReport))
+				var data []byte
+				switch getReport.ReportType {
+				case UhidReportTypeFeature:
+					data, err = h.handler.GetFeatureReport(getReport.ReportID)
+				case UhidReportTypeInput:
+					data, err = h.handler.GetInputReport(getReport.ReportID)
+				case UhidReportTypeOutput:
+					data, err = h.handler.GetOutputReport(getReport.ReportID)
+				default:
+					err = fmt.Errorf("unsupported report type: %d", getReport.ReportType)
+				}
+				var reply GetReportReply
+				if err != nil {
+					h.log.Error("failed to get feature report", zap.Error(err))
+					reply = GetReportReply{
+						EventType: uhid.GetReportReply,
+						RequestID: getReport.RequestID,
+						Error:     1,
+					}
+				} else {
+					reply = GetReportReply{
+						EventType: uhid.GetReportReply,
+						RequestID: getReport.RequestID,
+						Size:      uint16(len(data)),
+					}
+					copy(reply.Data[:], data)
+				}
+				h.log.Debug("GetReport reply", zap.Any("reply", reply))
+				err = h.dev.WriteEvent(reply)
+				if err != nil {
+					h.log.Error("failed to write GetReport reply", zap.Error(err))
+				}
+			case uhid.SetReport:
+				reader := bytes.NewReader(event.Data)
+				setReport := SetReportRequest{}
+				err := binary.Read(reader, binary.LittleEndian, &setReport)
+				if err != nil {
+					h.log.Error("failed to read SetReport request", zap.Error(err))
+					continue
+				}
+				h.log.Debug("SetReport request", zap.Any("request", setReport))
+				data := make([]byte, setReport.Size)
+				copy(data, setReport.Data[:])
+				var reply SetReportReply
+				switch setReport.ReportType {
+				case UhidReportTypeFeature:
+					err = h.handler.SetFeatureReport(setReport.ReportID, data)
+				case UhidReportTypeOutput:
+					err = h.handler.SetOutputReport(setReport.ReportID, data)
+				default:
+					err = fmt.Errorf("unsupported report type: %d", setReport.ReportType)
+				}
+				if err != nil {
+					h.log.Error("failed to set report", zap.Error(err))
+					reply = SetReportReply{
+						EventType: uhid.SetReportReply,
+						RequestID: setReport.RequestID,
+						Error:     1,
+					}
+				} else {
+					reply = SetReportReply{
+						EventType: uhid.SetReportReply,
+						RequestID: setReport.RequestID,
+					}
+				}
+				err = h.dev.WriteEvent(reply)
+				if err != nil {
+					h.log.Error("failed to write SetReport reply", zap.Error(err))
+				}
+			}
+		}
+	}
 }
 
 func (h *uhidDevice) Close() error {
@@ -429,11 +592,8 @@ func (h *uhidDevice) Read(buf []byte) (int, error) {
 		select {
 		case <-h.ctx.Done():
 			return 0, h.ctx.Err()
-		case event := <-h.events:
-			if event.Type != uhid.Output {
-				continue
-			}
-			n := copy(buf, event.Data)
+		case data := <-h.readCh:
+			n := copy(buf, data)
 			return n, nil
 		}
 	}

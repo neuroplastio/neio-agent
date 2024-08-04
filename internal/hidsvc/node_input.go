@@ -74,13 +74,21 @@ func (g *InputNode) handleDevice(ctx context.Context, down flowapi.Stream) {
 		return
 	}
 	itemSet := hidapi.NewDataItemSet(desc)
-	source := hidapi.NewEventSource(g.log.Named("source"), itemSet.WithType(hiddesc.MainItemTypeInput))
-	err = source.InitReports(dev.GetInputReport)
+	inputState := hidapi.NewReportState(g.log.Named("input"), itemSet.WithType(hiddesc.MainItemTypeInput))
+	inputEvents, err := inputState.InitReports(dev.GetInputReport)
 	if err != nil {
 		dev.Close()
 		g.log.Error("Failed to initialize input reports", zap.Error(err))
 		return
 	}
+	featureState := hidapi.NewReportState(g.log.Named("feature"), itemSet.WithType(hiddesc.MainItemTypeFeature))
+	featureEvents, err := inputState.InitReports(dev.GetFeatureReport)
+	if err != nil {
+		dev.Close()
+		g.log.Error("Failed to initialize feature reports", zap.Error(err))
+		return
+	}
+	outputState := hidapi.NewReportState(g.log.Named("output"), itemSet.WithType(hiddesc.MainItemTypeOutput))
 
 	release, err := dev.Acquire()
 	if err != nil {
@@ -89,8 +97,24 @@ func (g *InputNode) handleDevice(ctx context.Context, down flowapi.Stream) {
 		return
 	}
 	g.log.Info("Input device acquired", zap.String("addr", g.addr.String()))
+	downEvents := down.Subscribe(ctx)
+
+	for _, event := range inputEvents {
+		down.Broadcast(flowapi.Event{
+			Type: flowapi.HIDEventTypeInput,
+			HID:  event,
+		})
+	}
+
+	for _, event := range featureEvents {
+		down.Broadcast(flowapi.Event{
+			Type: flowapi.HIDEventTypeFeature,
+			HID:  event,
+		})
+	}
 
 	go func() {
+		// Input reports
 		buf := make([]byte, 2048) // TODO: calculate from the descriptor (only for standard input devices)
 		for {
 			n, err := dev.Read(buf)
@@ -102,13 +126,44 @@ func (g *InputNode) handleDevice(ctx context.Context, down flowapi.Stream) {
 				return
 			}
 			if n > 0 {
-				event := source.OnReport(buf[:n])
+				event := inputState.ApplyReport(buf[:n])
 				if !event.IsEmpty() {
 					g.log.Debug("event", zap.String("event", event.String()))
 					down.Broadcast(flowapi.Event{
-						HID: event,
+						Type: flowapi.HIDEventTypeInput,
+						HID:  event,
 					})
 				}
+			}
+		}
+	}()
+	go func() {
+		// Output and Feature reports
+		for {
+			select {
+			case event := <-downEvents:
+				switch event.Type {
+				case flowapi.HIDEventTypeOutput:
+					reports := outputState.ApplyEvent(event.HID)
+					for _, report := range reports {
+						_, err := dev.Write(report)
+						if err != nil {
+							g.log.Error("Failed to write output report", zap.Error(err))
+						}
+					}
+				case flowapi.HIDEventTypeFeature:
+					reports := featureState.ApplyEvent(event.HID)
+					for _, report := range reports {
+						_, err := dev.SetFeatureReport(report)
+						if err != nil {
+							g.log.Error("Failed to write feature report", zap.Error(err))
+						}
+					}
+				default:
+					g.log.Error("Unknown HID event type", zap.Any("type", event.Type))
+				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()

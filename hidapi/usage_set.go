@@ -355,12 +355,8 @@ func (u UsageSelector) Contains(usage Usage) bool {
 func NewUsageSets(dataItems []hiddesc.DataItem) map[int]UsageSet {
 	sets := make(map[int]UsageSet)
 	for i, item := range dataItems {
-		if item.Flags.IsConstant() {
-			// not a usage-set data item
-			continue
-		}
 		switch {
-		case item.UsageMaximum != 0 && item.Flags.IsArray() && (item.ReportSize == 8 || item.ReportSize == 16):
+		case item.UsageMaximum != 0 && !item.Flags.IsVariable() && (item.ReportSize == 8 || item.ReportSize == 16):
 			sets[i] = NewUsageSelector(int(item.ReportSize), item.UsagePage, item.UsageMinimum, item.UsageMaximum)
 		case item.UsageMaximum != 0 && item.Flags.IsVariable() && item.ReportSize == 1:
 			sets[i] = NewUsageRangeFlags(item.UsagePage, item.UsageMinimum, item.UsageMaximum)

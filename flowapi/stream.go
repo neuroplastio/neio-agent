@@ -6,9 +6,17 @@ import (
 	"github.com/neuroplastio/neio-agent/hidapi"
 )
 
+type HIDEventType uint8
+
+const (
+	HIDEventTypeInput HIDEventType = iota
+	HIDEventTypeOutput
+	HIDEventTypeFeature
+)
+
 type Event struct {
-	SourceNodeID string
-	HID          *hidapi.Event
+	Type HIDEventType
+	HID  *hidapi.Event
 }
 
 type Stream interface {

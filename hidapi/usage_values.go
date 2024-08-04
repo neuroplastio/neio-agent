@@ -98,10 +98,11 @@ func (u usageValues) SetValue(bits bits.Bits, usage Usage, value int32) {
 func NewUsageValuesItems(dataItems []hiddesc.DataItem) map[int]UsageValues {
 	values := make(map[int]UsageValues)
 	for i, item := range dataItems {
-		if len(item.UsageIDs) == 0 || item.Flags.IsConstant() || item.Flags.IsArray() {
+		if len(item.UsageIDs) == 0 || !item.Flags.IsVariable() {
 			// not a usage-value data item
 			continue
 		}
+		// TODO: dynamic size
 		switch item.ReportSize {
 		case 7, 8, 16, 24, 32:
 		default:

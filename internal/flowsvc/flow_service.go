@@ -69,7 +69,6 @@ func newFlowStream(ctx context.Context, nodeID string, subscriber FlowSubscriber
 func (f flowStream) Publish(toNodeID string, msg flowapi.Event) {
 	// TODO: configurable timeout
 	ctx, cancel := context.WithTimeout(f.ctx, 100*time.Microsecond)
-	msg.SourceNodeID = f.nodeID
 	f.publishers[toNodeID](ctx, msg)
 	cancel()
 }

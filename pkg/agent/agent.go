@@ -118,3 +118,7 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) HID() *hidsvc.Service {
 	return a.hidSvc
 }
+
+func (a *Agent) Config() *configsvc.Service {
+	return a.configSvc
+}

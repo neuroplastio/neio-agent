@@ -11,6 +11,10 @@ uhid:
     name: neio-wacom
     vendorId: 0x056a
     productId: 0x0393
+  - id: neio-wacom-touch
+    name: neio-wacom-touch
+    vendorId: 0x056a
+    productId: 0x0394
   - id: neio-magic
     name: neio-magic
     vendorId: 0x6666

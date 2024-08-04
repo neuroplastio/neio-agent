@@ -75,10 +75,6 @@ func (d DataFlags) IsVariable() bool {
 	return d&DataFlagVariable != 0
 }
 
-func (d DataFlags) IsArray() bool {
-	return !d.IsVariable()
-}
-
 func (d DataFlags) IsRelative() bool {
 	return d&DataFlagRelative != 0
 }

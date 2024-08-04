@@ -2,6 +2,7 @@ package hidsvc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/neuroplastio/neio-agent/flowapi"
@@ -63,7 +64,41 @@ func (o *OutputNode) Configure(c flowapi.NodeConfigurator) error {
 	return nil
 }
 
-func (o *OutputNode) handleDevice(ctx context.Context, eventCh chan flowapi.Event) {
+type outDevHandler struct {
+	inputState   *hidapi.ReportState
+	outputState  *hidapi.ReportState
+	featureState *hidapi.ReportState
+}
+
+func (o *outDevHandler) GetInputReport(reportID uint8) ([]byte, error) {
+	return o.inputState.GetReport(reportID)
+}
+
+func (o *outDevHandler) GetOutputReport(reportID uint8) ([]byte, error) {
+	return o.outputState.GetReport(reportID)
+}
+
+func (o *outDevHandler) GetFeatureReport(reportID uint8) ([]byte, error) {
+	return o.featureState.GetReport(reportID)
+}
+
+func (o *outDevHandler) SetOutputReport(reportID uint8, data []byte) error {
+	if data[0] != reportID {
+		return fmt.Errorf("report ID mismatch")
+	}
+	o.outputState.ApplyReport(data)
+	return nil
+}
+
+func (o *outDevHandler) SetFeatureReport(reportID uint8, data []byte) error {
+	if data[0] != reportID {
+		return fmt.Errorf("report ID mismatch")
+	}
+	o.featureState.ApplyReport(data)
+	return nil
+}
+
+func (o *OutputNode) handleDevice(ctx context.Context, up flowapi.Stream, eventCh chan flowapi.Event) {
 	desc, err := o.buildDescriptor()
 	if err != nil {
 		o.log.Error("Failed to build HID report descriptor", zap.Error(err))
@@ -74,24 +109,75 @@ func (o *OutputNode) handleDevice(ctx context.Context, eventCh chan flowapi.Even
 		o.log.Error("Failed to encode HID report descriptor", zap.Error(err))
 		return
 	}
-	dev, err := o.hid.OpenOutputDevice(o.addr, descRaw)
+	o.log.Debug("Output desc size", zap.Any("desc", len(descRaw)))
+	itemSet := hidapi.NewDataItemSet(desc)
+	inputState := hidapi.NewReportState(o.log.Named("input"), itemSet.WithType(hiddesc.MainItemTypeInput))
+	outputState := hidapi.NewReportState(o.log.Named("output"), itemSet.WithType(hiddesc.MainItemTypeOutput))
+	featureState := hidapi.NewReportState(o.log.Named("feature"), itemSet.WithType(hiddesc.MainItemTypeFeature))
+	handler := &outDevHandler{
+		inputState:   inputState,
+		outputState:  outputState,
+		featureState: featureState,
+	}
+	dev, err := o.hid.OpenOutputDevice(o.addr, handler, descRaw)
 	if err != nil {
 		o.log.Error("Failed to open output device", zap.Error(err))
 		return
 	}
 	defer dev.Close()
-	itemSet := hidapi.NewDataItemSet(desc)
-	sink := hidapi.NewEventSink(o.log.Named("sink"), itemSet.WithType(hiddesc.MainItemTypeInput))
+	outputEvents, err := outputState.InitReports(dev.GetOutputReport)
+	if err != nil {
+		o.log.Error("Failed to initialize output reports", zap.Error(err))
+		return
+	}
+	for _, event := range outputEvents {
+		up.Broadcast(flowapi.Event{
+			Type: flowapi.HIDEventTypeOutput,
+			HID:  event,
+		})
+	}
 
+	go func() {
+		// Output report reader
+		buf := make([]byte, 1024)
+		for {
+			n, err := dev.Read(buf)
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			if err != nil {
+				o.log.Error("Failed to read output report", zap.Error(err))
+				return
+			}
+			o.log.Debug("Read output report", zap.Any("size", n), zap.Any("reportID", buf[0]))
+			if ctx.Err() != nil {
+				return
+			}
+			event := outputState.ApplyReport(buf[:n])
+			if !event.IsEmpty() {
+				up.Broadcast(flowapi.Event{
+					Type: flowapi.HIDEventTypeOutput,
+					HID:  event,
+				})
+			}
+		}
+	}()
+
+	// Input And Feature Reports
 	for {
 		select {
 		case event := <-eventCh:
-			reports := sink.OnEvent(event.HID)
-			for _, report := range reports {
-				_, err := dev.Write(hidapi.EncodeReport(report).Bytes())
-				if err != nil {
-					o.log.Error("Failed to write output report", zap.Error(err))
+			switch event.Type {
+			case flowapi.HIDEventTypeInput:
+				reports := inputState.ApplyEvent(event.HID)
+				for _, report := range reports {
+					_, err := dev.Write(report)
+					if err != nil {
+						o.log.Error("Failed to write output report", zap.Error(err))
+					}
 				}
+			case flowapi.HIDEventTypeFeature:
+				featureState.ApplyEvent(event.HID)
 			}
 		case <-ctx.Done():
 			return
@@ -172,7 +258,7 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 	isConnected := o.hid.IsOutputConnected(o.addr)
 	if isConnected {
 		deviceCtx, cancel = context.WithCancel(ctx)
-		go o.handleDevice(deviceCtx, eventCh)
+		go o.handleDevice(deviceCtx, up, eventCh)
 	}
 	go func() {
 		for {
@@ -197,7 +283,7 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 			o.log.Info("Restarting output device", zap.Any("event", ev))
 			cancel()
 			deviceCtx, cancel = context.WithCancel(ctx)
-			go o.handleDevice(deviceCtx, eventCh)
+			go o.handleDevice(deviceCtx, up, eventCh)
 		case ev := <-deviceEvents:
 			switch ev.Key.Type {
 			case OutputConnected:
@@ -206,7 +292,7 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 				}
 				o.log.Info("Output device connected", zap.String("addr", o.addr.String()))
 				deviceCtx, cancel = context.WithCancel(ctx)
-				go o.handleDevice(deviceCtx, eventCh)
+				go o.handleDevice(deviceCtx, up, eventCh)
 			case OutputDisconnected:
 				if cancel == nil {
 					break

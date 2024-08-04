@@ -15,6 +15,10 @@ nodes:
     to: [out-wacom]
     input:
       addr: linux/056a:0392.0
+  - id: wacom-touch
+    to: [out-wacom-touch]
+    input:
+      addr: linux/056a:0392.1
   # - id: magic-trackpad
   #   to: [out-magic]
   #   input:
@@ -146,7 +150,14 @@ nodes:
     output:
       addr: linux/uhid:neio-wacom
       descriptor:
-        inputs: [linux/056a:0392.0]
+        inputs:
+          - linux/056a:0392.0
+  - id: out-wacom-touch
+    output:
+      addr: linux/uhid:neio-wacom-touch
+      descriptor:
+        inputs:
+          - linux/056a:0392.1
 
   #   output:
   #     addr: linux/uhid:neio-magic

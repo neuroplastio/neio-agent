@@ -409,7 +409,7 @@ type Backend interface {
 	Start(ctx context.Context, pub BackendPublisher) error
 	Ready() <-chan struct{}
 	OpenInputDevice(id string) (InputDevice, error)
-	OpenOutputDevice(id string, descriptor []byte) (OutputDevice, error)
+	OpenOutputDevice(id string, handler OutputDeviceHandler, descriptor []byte) (OutputDevice, error)
 }
 
 type Address struct {
@@ -556,9 +556,6 @@ func (s *Service) GetOutputDevice(addr Address) (HidOutputDevice, error) {
 var ErrDeviceNotConnected = errors.New("device not connected")
 
 func (s *Service) OpenInputDevice(addr Address) (InputDevice, error) {
-	if !s.IsInputConnected(addr) {
-		return nil, ErrDeviceNotConnected
-	}
 	dev, err := s.options.backends[addr.Backend].OpenInputDevice(addr.ID)
 	if err != nil {
 		return nil, fmt.Errorf("error opening input device: %w", err)
@@ -566,11 +563,8 @@ func (s *Service) OpenInputDevice(addr Address) (InputDevice, error) {
 	return dev, nil
 }
 
-func (s *Service) OpenOutputDevice(addr Address, descriptor []byte) (OutputDevice, error) {
-	if !s.IsOutputConnected(addr) {
-		return nil, ErrDeviceNotConnected
-	}
-	dev, err := s.options.backends[addr.Backend].OpenOutputDevice(addr.ID, descriptor)
+func (s *Service) OpenOutputDevice(addr Address, handler OutputDeviceHandler, descriptor []byte) (OutputDevice, error) {
+	dev, err := s.options.backends[addr.Backend].OpenOutputDevice(addr.ID, handler, descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("error opening output device: %w", err)
 	}
@@ -607,6 +601,16 @@ type InputDevice interface {
 	Acquire() (func(), error)
 	GetReportDescriptor() ([]byte, error)
 	GetInputReport(reportID uint8) ([]byte, error)
+	GetFeatureReport(reportID uint8) ([]byte, error)
+	SetFeatureReport(data []byte) (int, error)
+}
+
+type OutputDeviceHandler interface {
+	GetInputReport(reportID uint8) ([]byte, error)
+	GetOutputReport(reportID uint8) ([]byte, error)
+	GetFeatureReport(reportID uint8) ([]byte, error)
+	SetOutputReport(reportID uint8, data []byte) error
+	SetFeatureReport(reportID uint8, data []byte) error
 }
 
 type OutputDevice interface {
