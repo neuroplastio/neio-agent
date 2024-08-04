@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Event struct {
+	ts       time.Time
 	mu       sync.Mutex
 	usages   []UsageEvent
 	usageMap map[Usage]int
@@ -15,6 +17,7 @@ type Event struct {
 func (h *Event) Clone() *Event {
 	h.mu.Lock()
 	clone := &Event{
+		ts:       h.ts,
 		usageMap: make(map[Usage]int, len(h.usageMap)),
 	}
 	for _, usage := range h.usages {
@@ -26,6 +29,7 @@ func (h *Event) Clone() *Event {
 
 func NewEvent() *Event {
 	return &Event{
+		ts:       time.Now(),
 		usageMap: make(map[Usage]int, 16),
 	}
 }
@@ -188,4 +192,8 @@ func (h *Event) Clear() {
 	h.usages = h.usages[:0]
 	clear(h.usageMap)
 	h.mu.Unlock()
+}
+
+func (h *Event) Duration() time.Duration {
+	return time.Since(h.ts)
 }

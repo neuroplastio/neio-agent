@@ -88,12 +88,6 @@ func (r *ReportState) initializeStates() {
 				for _, usageID := range unordered.UsageIDs() {
 					usageIDs = append(usageIDs, NewUsage(unordered.UsagePage(), usageID).String())
 				}
-				r.log.Debug("Unordered Usage Set",
-					zap.Uint8("reportId", rd.ID),
-					zap.Int("itemIdx", idx),
-					zap.String("page", fmt.Sprintf("%02x", usageSet.UsagePage())),
-					zap.Any("usages", usageIDs),
-				)
 				if _, ok := r.usageSetMap[usageSet.UsagePage()]; !ok {
 					r.usageSetMap[usageSet.UsagePage()] = make(map[uint16]itemAddress)
 				}
@@ -117,11 +111,6 @@ func (r *ReportState) initializeStates() {
 		for idx, usageValue := range r.usageValues[rd.ID] {
 			// TODO: handle overlapping usages
 			for _, usage := range usageValue.Usages() {
-				r.log.Debug("Usage Value",
-					zap.Uint8("reportId", rd.ID),
-					zap.Int("itemIdx", idx),
-					zap.String("usage", usage.String()),
-				)
 				r.usageValuesIndex[usage] = itemAddress{
 					reportID: rd.ID,
 					itemIdx:  idx,
