@@ -277,6 +277,10 @@ func (s *Service) onOutputConnected(ctx context.Context, backendID string, bdev 
 
 var ErrDeviceNotFound = errors.New("device not found")
 
+func (s *Service) reportDescriptorKey(address Address) []byte {
+	return []byte(fmt.Sprintf("hid/descriptors/%s/%s", address.Backend, address.ID))
+}
+
 func (s *Service) inputDeviceKey(address Address) []byte {
 	return []byte(fmt.Sprintf("hid/inputs/%s/%s", address.Backend, address.ID))
 }
@@ -286,9 +290,18 @@ func (s *Service) outputDeviceKey(address Address) []byte {
 }
 
 func (s *Service) initializeInputDevice(backendID string, bdev BackendDevice) (HidInputDevice, error) {
+	inputDev, err := s.options.backends[backendID].OpenInputDevice(bdev.ID)
+	if err != nil {
+		return HidInputDevice{}, fmt.Errorf("failed to open device: %w", err)
+	}
+	desc, err := inputDev.GetReportDescriptor()
+	_ = inputDev.Close()
+	if err != nil {
+		return HidInputDevice{}, fmt.Errorf("failed to get report descriptor: %w", err)
+	}
 	var dev HidInputDevice
 	now := s.now()
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err = s.db.Update(func(txn *badger.Txn) error {
 		addr := Address{Backend: backendID, ID: bdev.ID}
 		key := s.inputDeviceKey(addr)
 		item, err := txn.Get(key)
@@ -317,7 +330,16 @@ func (s *Service) initializeInputDevice(backendID string, bdev BackendDevice) (H
 		if err != nil {
 			return fmt.Errorf("failed to marshal device: %w", err)
 		}
-		return txn.Set(key, b)
+		err = txn.Set(key, b)
+		if err != nil {
+			return fmt.Errorf("failed to save device: %w", err)
+		}
+		descKey := s.reportDescriptorKey(addr)
+		err = txn.Set(descKey, desc)
+		if err != nil {
+			return fmt.Errorf("failed to save descriptor: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return HidInputDevice{}, fmt.Errorf("failed to fetch device: %w", err)
@@ -533,6 +555,25 @@ func (s *Service) GetInputDevice(addr Address) (HidInputDevice, error) {
 		return HidInputDevice{}, fmt.Errorf("failed to get device: %w", err)
 	}
 	return dev, nil
+}
+
+func (s *Service) GetReportDescriptor(addr Address) ([]byte, error) {
+	var desc []byte
+	err := s.db.View(func(txn *badger.Txn) error {
+		key := s.reportDescriptorKey(addr)
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+		return item.Value(func(val []byte) error {
+			desc = append(desc, val...)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get descriptor: %w", err)
+	}
+	return desc, nil
 }
 
 func (s *Service) GetOutputDevice(addr Address) (HidOutputDevice, error) {
