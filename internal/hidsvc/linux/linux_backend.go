@@ -527,7 +527,7 @@ func (h *uhidDevice) run() {
 					}
 					copy(reply.Data[:], data)
 				}
-				h.log.Debug("GetReport reply", zap.Any("reply", reply))
+				h.log.Debug("GetReport reply", zap.Any("data", data))
 				err = h.dev.WriteEvent(reply)
 				if err != nil {
 					h.log.Error("failed to write GetReport reply", zap.Error(err))
@@ -540,7 +540,7 @@ func (h *uhidDevice) run() {
 					h.log.Error("failed to read SetReport request", zap.Error(err))
 					continue
 				}
-				h.log.Debug("SetReport request", zap.Any("request", setReport))
+				h.log.Debug("SetReport request", zap.Any("data", setReport.Data[:setReport.Size]))
 				data := make([]byte, setReport.Size)
 				copy(data, setReport.Data[:])
 				var reply SetReportReply
@@ -565,6 +565,7 @@ func (h *uhidDevice) run() {
 						RequestID: setReport.RequestID,
 					}
 				}
+				h.log.Debug("SetReport reply", zap.Any("error", reply.Error))
 				err = h.dev.WriteEvent(reply)
 				if err != nil {
 					h.log.Error("failed to write SetReport reply", zap.Error(err))

@@ -656,5 +656,4 @@ type OutputDeviceHandler interface {
 
 type OutputDevice interface {
 	io.ReadWriteCloser
-	GetOutputReport(reportID uint8) ([]byte, error)
 }

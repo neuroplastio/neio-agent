@@ -126,17 +126,6 @@ func (o *OutputNode) handleDevice(ctx context.Context, up flowapi.Stream, eventC
 		return
 	}
 	defer dev.Close()
-	outputEvents, err := o.outputState.InitReports(dev.GetOutputReport)
-	if err != nil {
-		o.log.Error("Failed to initialize output reports", zap.Error(err))
-		return
-	}
-	for _, event := range outputEvents {
-		up.Broadcast(flowapi.Event{
-			Type: flowapi.HIDEventTypeOutput,
-			HID:  event,
-		})
-	}
 
 	go func() {
 		// Output report reader
@@ -253,7 +242,12 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 				select {
 				case eventCh <- event:
 				default:
-					o.log.Warn("Dropped event", zap.Any("event", event))
+					switch event.Type {
+					case flowapi.HIDEventTypeInput:
+						o.inputState.ApplyEvent(event.HID)
+					case flowapi.HIDEventTypeFeature:
+						o.featureState.ApplyEvent(event.HID)
+					}
 				}
 			case <-ctx.Done():
 				return

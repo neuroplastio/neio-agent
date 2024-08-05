@@ -143,10 +143,17 @@ func (r *ReportState) initializeStates() {
 func (r *ReportState) InitReports(reportGetter func(reportID uint8) ([]byte, error)) ([]*Event, error) {
 	var events []*Event
 	for _, rd := range r.dataItems.Reports() {
+		if len(rd.DataItems) == 0 {
+			continue
+		}
 		reportData, err := reportGetter(rd.ID)
 		if err != nil {
-			r.log.Warn("failed to get report", zap.Error(err))
+			r.log.Warn("failed to get report", zap.Uint8("reportId", rd.ID), zap.Error(err))
 			continue
+		}
+		rep, ok := r.decoder.Decode(reportData)
+		if ok {
+			r.log.Debug("received report", zap.Uint8("reportId", rd.ID), zap.Any("fields", rep.FieldsStrings()))
 		}
 		event := r.ApplyReport(reportData)
 		if !event.IsEmpty() {
@@ -230,6 +237,7 @@ func (r *ReportState) GetReport(reportID uint8) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("report ID %d not found", reportID)
 	}
+	r.log.Debug("GetReport", zap.Uint8("reportID", reportID), zap.Any("fields", report.FieldsStrings()))
 	return EncodeReport(report).Bytes(), nil
 }
 

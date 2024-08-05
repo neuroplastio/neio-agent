@@ -82,7 +82,7 @@ func (g *InputNode) handleDevice(ctx context.Context, down flowapi.Stream) {
 		return
 	}
 	featureState := hidapi.NewReportState(g.log.Named("feature"), itemSet.WithType(hiddesc.MainItemTypeFeature))
-	featureEvents, err := inputState.InitReports(dev.GetFeatureReport)
+	featureEvents, err := featureState.InitReports(dev.GetFeatureReport)
 	if err != nil {
 		dev.Close()
 		g.log.Error("Failed to initialize feature reports", zap.Error(err))
