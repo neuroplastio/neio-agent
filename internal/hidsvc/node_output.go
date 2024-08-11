@@ -221,7 +221,7 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 	var deviceCtx context.Context
 	var cancel context.CancelFunc
 	events := up.Subscribe(ctx)
-	reportsCh := make(chan [][]byte)
+	reportsCh := make(chan [][]byte, 1)
 	defer close(reportsCh)
 
 	isConnected := o.hid.IsOutputConnected(o.addr)
