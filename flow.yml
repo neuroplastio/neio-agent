@@ -3,10 +3,10 @@ nodes:
   #   to: [test]
   #   input:
   #     addr: linux/3434:fe0e.0
-  # - id: mouse
-  #   to: [mods]
-  #   input:
-  #     addr: linux/046d:c547.0
+  - id: mouse
+    to: [mods]
+    input:
+      addr: linux/046d:c547.0
   - id: moonlander
     to: [mods]
     input:
@@ -131,10 +131,10 @@ nodes:
         btn.5: tapHold(btn.5, RightShift)
 
   - id: split
-    to: [out-kb]
+    to: [out-kb, out-pointer]
     split:
       out-kb: [kb, con]
-      # out-pointer: [dsk, btn]
+      out-pointer: [dsk, btn]
 
   - id: out-kb
     output:
@@ -143,12 +143,12 @@ nodes:
         inputs:
         - linux/3297:1969.0
         - linux/3297:1969.3
-  # - id: out-pointer
-  #   output:
-  #     addr: linux/uhid:neio-pointer
-  #     descriptor:
-  #       inputs:
-  #       - linux/046d:c547.0
+  - id: out-pointer
+    output:
+      addr: linux/uhid:neio-pointer
+      descriptor:
+        inputs:
+        - linux/046d:c547.0
   # - id: out-wacom
   #   output:
   #     addr: linux/uhid:neio-wacom
