@@ -240,7 +240,7 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 						select {
 						case reportsCh <- reports:
 						default:
-							o.log.Warn("Dropped input reports")
+							o.log.Warn("Dropped input reports", zap.Any("event", event.HID.String()))
 						}
 					}
 				case flowapi.HIDEventTypeFeature:
