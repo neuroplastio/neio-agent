@@ -114,7 +114,7 @@ func (o *outDevHandler) SetFeatureReport(reportID uint8, data []byte) error {
 	return nil
 }
 
-func (o *OutputNode) handleDevice(ctx context.Context, up flowapi.Stream, eventCh chan flowapi.Event) {
+func (o *OutputNode) handleDevice(ctx context.Context, up flowapi.Stream, inputCh chan [][]byte) {
 	handler := &outDevHandler{
 		inputState:   o.inputState,
 		outputState:  o.outputState,
@@ -156,18 +156,12 @@ func (o *OutputNode) handleDevice(ctx context.Context, up flowapi.Stream, eventC
 	// Input And Feature Reports
 	for {
 		select {
-		case event := <-eventCh:
-			switch event.Type {
-			case flowapi.HIDEventTypeInput:
-				reports := o.inputState.ApplyEvent(event.HID)
-				for _, report := range reports {
-					_, err := dev.Write(report)
-					if err != nil {
-						o.log.Error("Failed to write output report", zap.Error(err))
-					}
+		case reports := <-inputCh:
+			for _, report := range reports {
+				_, err := dev.Write(report)
+				if err != nil {
+					o.log.Error("Failed to write output report", zap.Error(err))
 				}
-			case flowapi.HIDEventTypeFeature:
-				o.featureState.ApplyEvent(event.HID)
 			}
 		case <-ctx.Done():
 			return
@@ -227,27 +221,30 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 	var deviceCtx context.Context
 	var cancel context.CancelFunc
 	events := up.Subscribe(ctx)
-	eventCh := make(chan flowapi.Event)
-	defer close(eventCh)
+	reportsCh := make(chan [][]byte)
+	defer close(reportsCh)
 
 	isConnected := o.hid.IsOutputConnected(o.addr)
 	if isConnected {
 		deviceCtx, cancel = context.WithCancel(ctx)
-		go o.handleDevice(deviceCtx, up, eventCh)
+		go o.handleDevice(deviceCtx, up, reportsCh)
 	}
 	go func() {
 		for {
 			select {
 			case event := <-events:
-				select {
-				case eventCh <- event:
-				default:
-					switch event.Type {
-					case flowapi.HIDEventTypeInput:
-						o.inputState.ApplyEvent(event.HID)
-					case flowapi.HIDEventTypeFeature:
-						o.featureState.ApplyEvent(event.HID)
+				switch event.Type {
+				case flowapi.HIDEventTypeInput:
+					reports := o.inputState.ApplyEvent(event.HID)
+					if len(reports) > 0 {
+						select {
+						case reportsCh <- reports:
+						default:
+							o.log.Warn("Dropped input reports")
+						}
 					}
+				case flowapi.HIDEventTypeFeature:
+					o.featureState.ApplyEvent(event.HID)
 				}
 			case <-ctx.Done():
 				return
@@ -264,7 +261,7 @@ func (o *OutputNode) Run(ctx context.Context, up flowapi.Stream, _ flowapi.Strea
 				}
 				o.log.Info("Output device connected", zap.String("addr", o.addr.String()))
 				deviceCtx, cancel = context.WithCancel(ctx)
-				go o.handleDevice(deviceCtx, up, eventCh)
+				go o.handleDevice(deviceCtx, up, reportsCh)
 			case OutputDisconnected:
 				if cancel == nil {
 					break

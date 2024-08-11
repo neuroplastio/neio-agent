@@ -13,6 +13,7 @@ import (
 	"github.com/jochenvg/go-udev"
 	"github.com/neuroplastio/neio-agent/internal/configsvc"
 	"github.com/neuroplastio/neio-agent/internal/hidsvc"
+	"github.com/neuroplastio/neio-agent/pkg/bits"
 	"github.com/psanford/uhid"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/sstallion/go-hid"
@@ -492,7 +493,7 @@ func (h *uhidDevice) run() {
 					h.log.Warn("Dropped uhid output event")
 				}
 			case uhid.GetReport:
-				reader := bytes.NewReader(event.Data) // We just want to read the first uint32 for now
+				reader := bytes.NewReader(event.Data)
 				getReport := GetReportRequest{}
 				err := binary.Read(reader, binary.LittleEndian, &getReport)
 				if err != nil {
@@ -527,7 +528,7 @@ func (h *uhidDevice) run() {
 					}
 					copy(reply.Data[:], data)
 				}
-				h.log.Debug("GetReport reply", zap.Any("data", data))
+				h.log.Debug("GetReport reply", zap.Any("data", bits.New(data, 0).String()))
 				err = h.dev.WriteEvent(reply)
 				if err != nil {
 					h.log.Error("failed to write GetReport reply", zap.Error(err))

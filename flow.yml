@@ -3,22 +3,22 @@ nodes:
   #   to: [test]
   #   input:
   #     addr: linux/3434:fe0e.0
-  - id: mouse
-    to: [mods]
-    input:
-      addr: linux/046d:c547.0
+  # - id: mouse
+  #   to: [mods]
+  #   input:
+  #     addr: linux/046d:c547.0
   - id: moonlander
     to: [mods]
     input:
       addr: linux/3297:1969.0
-  - id: wacom
-    to: [out-wacom]
-    input:
-      addr: linux/056a:0392.0
-  - id: wacom-touch
-    to: [out-wacom-touch]
-    input:
-      addr: linux/056a:0392.1
+  # - id: wacom
+  #   to: [out-wacom]
+  #   input:
+  #     addr: linux/056a:0392.0
+  # - id: wacom-touch
+  #   to: [out-wacom-touch]
+  #   input:
+  #     addr: linux/056a:0392.1
   # - id: magic-trackpad
   #   to: [out-magic]
   #   input:
@@ -131,10 +131,10 @@ nodes:
         btn.5: tapHold(btn.5, RightShift)
 
   - id: split
-    to: [out-kb, out-pointer]
+    to: [out-kb]
     split:
       out-kb: [kb, con]
-      out-pointer: [dsk, btn]
+      # out-pointer: [dsk, btn]
 
   - id: out-kb
     output:
@@ -143,26 +143,28 @@ nodes:
         inputs:
         - linux/3297:1969.0
         - linux/3297:1969.3
-  - id: out-pointer
-    output:
-      addr: linux/uhid:neio-pointer
-      descriptor:
-        inputs:
-        - linux/046d:c547.0
-  - id: out-wacom
-    output:
-      addr: linux/uhid:neio-wacom
-      descriptor:
-        inputs:
-          - linux/056a:0392.0
-  - id: out-wacom-touch
-    output:
-      addr: linux/uhid:neio-wacom-touch
-      descriptor:
-        inputs:
-          - linux/056a:0392.1
+  # - id: out-pointer
+  #   output:
+  #     addr: linux/uhid:neio-pointer
+  #     descriptor:
+  #       inputs:
+  #       - linux/046d:c547.0
+  # - id: out-wacom
+  #   output:
+  #     addr: linux/uhid:neio-wacom
+  #     descriptor:
+  #       inputs:
+  #         - linux/056a:0392.0
+  # - id: out-wacom-touch
+  #   output:
+  #     addr: linux/uhid:neio-wacom-touch
+  #     descriptor:
+  #       inputs:
+  #         - linux/056a:0392.1
 
+  # - id: out-magic
   #   output:
   #     addr: linux/uhid:neio-magic
-  #     descriptorFrom:
+  #     descriptor:
+  #       inputs:
   #       - linux/05ac:0265.1

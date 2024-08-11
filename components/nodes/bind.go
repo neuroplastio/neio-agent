@@ -94,6 +94,7 @@ func (b *Bind) Run(ctx context.Context, up flowapi.Stream, down flowapi.Stream) 
 		for {
 			select {
 			case event := <-sendCh:
+				b.log.Debug("Sending event", zap.Any("event", event))
 				down.Broadcast(flowapi.Event{
 					HID: event,
 				})
